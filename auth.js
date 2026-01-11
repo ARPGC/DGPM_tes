@@ -3,7 +3,7 @@ const supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.s
 
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. Force Light Mode
+    // 1. Theme Check
     if (localStorage.getItem('urja-theme') === 'dark') {
         document.documentElement.classList.add('dark');
     } else {
@@ -11,45 +11,37 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('urja-theme', 'light');
     }
 
-    // 2. Check Session (ONLY if on the Login Page)
-    // This prevents the script from accidentally redirecting you if included on other pages
+    // 2. Check Session (Only on login page)
     if (window.location.pathname.includes('login.html') || window.location.pathname === '/' || window.location.pathname.endsWith('/')) {
         checkSession();
     }
 });
 
-// --- SESSION CHECK & REDIRECT ---
+// --- SESSION CHECK (ANTI-LOOP VERSION) ---
 async function checkSession() {
     const { data: { session } } = await supabaseClient.auth.getSession();
     
     if (session) {
-        // User is logged in, find out their role and redirect
-        await redirectUserBasedOnRole(session.user.id);
-    }
-}
+        // 1. Session exists, but does the PROFILE exist?
+        const { data: user, error } = await supabaseClient
+            .from('users')
+            .select('role')
+            .eq('id', session.user.id)
+            .single();
 
-async function redirectUserBasedOnRole(userId) {
-    const { data: user, error } = await supabaseClient
-        .from('users')
-        .select('role')
-        .eq('id', userId)
-        .single();
-
-    if (error || !user) {
-        console.error("Role fetch error:", error);
-        // Fallback if role check fails
-        window.location.href = 'student.html'; 
-        return;
-    }
-
-    // SMART REDIRECT LOGIC
-    if (user.role === 'admin') {
-        window.location.href = 'admin.html';
-    } else if (user.role === 'volunteer') {
-        window.location.href = 'volunteer.html';
-    } else {
-        // Default for students
-        window.location.href = 'student.html'; 
+        if (error || !user) {
+            // CRITICAL FIX: Session exists, but Profile is missing.
+            // This causes the loop. We must SIGN OUT to break it.
+            console.warn("Session found but Profile missing. Signing out to fix loop.");
+            await supabaseClient.auth.signOut();
+            // Stay on login page, maybe show error
+            showToast("Account error: Profile missing. Please Sign Up again.", "error");
+        } else {
+            // 2. Profile exists, safe to redirect
+            if (user.role === 'admin') window.location.href = 'admin.html';
+            else if (user.role === 'volunteer') window.location.href = 'volunteer.html';
+            else window.location.href = 'student.html';
+        }
     }
 }
 
@@ -71,8 +63,8 @@ async function handleLogin(e) {
         toggleLoading(false);
         showToast(error.message, 'error');
     } else {
-        // Successful Login - Check Role and Redirect
-        await redirectUserBasedOnRole(data.session.user.id);
+        // Check session again to handle redirect safely
+        checkSession();
     }
 }
 
@@ -89,6 +81,7 @@ async function handleSignup(e) {
         return;
     }
 
+    // These fields are crucial for the Trigger to work
     const metaData = {
         first_name: document.getElementById('reg-fname').value,
         last_name: document.getElementById('reg-lname').value,
@@ -114,11 +107,12 @@ async function handleSignup(e) {
         showToast(error.message, 'error');
     } else {
         if (data.session) {
-            showToast("Registration Successful!", 'success');
-            // Direct redirect for new signups (always students)
-            setTimeout(() => window.location.href = 'student.html', 1500);
+            showToast("Registration Successful! Redirecting...", 'success');
+            setTimeout(() => {
+                window.location.href = 'student.html';
+            }, 1500);
         } else {
-            showToast("Success! Please check email to verify.", 'success');
+            showToast("Success! Please check your email to verify.", 'success');
             switchAuthView('login');
         }
     }
@@ -131,11 +125,8 @@ async function handleForgotPass(e) {
 
     toggleLoading(true);
 
-    // Redirect user back to login page after they click the email link
-    const redirectTo = window.location.origin + '/login.html';
-
     const { data, error } = await supabaseClient.auth.resetPasswordForEmail(email, {
-        redirectTo: redirectTo
+        redirectTo: window.location.origin + '/login.html'
     });
 
     toggleLoading(false);
@@ -149,7 +140,6 @@ async function handleForgotPass(e) {
 }
 
 // --- UTILITIES ---
-
 function switchAuthView(viewId) {
     document.querySelectorAll('.auth-view').forEach(el => el.classList.add('hidden'));
     const target = document.getElementById('view-' + viewId);
