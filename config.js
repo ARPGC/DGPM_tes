@@ -1,8 +1,8 @@
 // --- CONFIGURATION ---
 const CONFIG = {
     // 1. SUPABASE (Database)
-    supabaseUrl: "https://rjzaikcjuycmecxgifzg.supabase.co",
-    supabaseKey: "sb_publishable_gdLqam4Fu7BPGBwBnA5cuQ_C2RPhzgq",
+    supabaseUrl: "https://jnznoenihatekvonrwdt.supabase.co",
+    supabaseKey: "sb_publishable_6rsHuYPAIqfPddl8uFHLyg_cVDxVua4",
 
 
     // 2. CLOUDINARY (Image Upload)
