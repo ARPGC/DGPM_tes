@@ -1,61 +1,36 @@
 // --- CONFIGURATION ---
 const supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
 
+// --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. Theme Check
-    if (localStorage.getItem('urja-theme') === 'dark' || (!localStorage.getItem('urja-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+    // 1. FORCE LIGHT MODE DEFAULT
+    // Only enable dark mode if the user has explicitly saved 'dark' in the past.
+    // Otherwise, force 'light' mode regardless of system settings.
+    const savedTheme = localStorage.getItem('urja-theme');
+    
+    if (savedTheme === 'dark') {
         document.documentElement.classList.add('dark');
     } else {
         document.documentElement.classList.remove('dark');
+        localStorage.setItem('urja-theme', 'light'); // Ensure preference is saved as light
     }
 
-    // 2. Check Session (Only if on login page to prevent loops)
-    if (window.location.pathname.includes('login.html')) {
-        checkSession();
-    }
+    // 2. Check Session
+    checkSession();
 });
 
-// --- 1. SESSION CHECK & REDIRECT ---
+// --- SESSION CHECK ---
 async function checkSession() {
-    const { data: { session } } = await supabaseClient.auth.getSession();
-    if (session) {
-        // User is already logged in, fetch role and redirect
-        await redirectUserBasedOnRole(session.user.id);
+    // Only check session if we are on the login page to redirect AWAY from it
+    if (window.location.pathname.includes('login.html')) {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (session) {
+            window.location.href = 'index.html';
+        }
     }
 }
 
-async function redirectUserBasedOnRole(userId) {
-    toggleLoading(true);
-    
-    const { data: user, error } = await supabaseClient
-        .from('users')
-        .select('role')
-        .eq('id', userId)
-        .single();
-
-    if (error || !user) {
-        // Error fetching role, maybe force logout?
-        console.error("Role fetch error:", error);
-        toggleLoading(false);
-        return;
-    }
-
-    // SMART REDIRECT LOGIC
-    switch (user.role) {
-        case 'admin':
-            window.location.href = 'admin.html';
-            break;
-        case 'volunteer':
-            window.location.href = 'volunteer.html';
-            break;
-        case 'student':
-        default:
-            window.location.href = 'student.html'; // Renamed from index.html
-            break;
-    }
-}
-
-// --- 2. LOGIN LOGIC ---
+// --- 1. LOGIN LOGIC ---
 async function handleLogin(e) {
     e.preventDefault();
     
@@ -64,25 +39,22 @@ async function handleLogin(e) {
 
     toggleLoading(true);
 
-    // 1. Authenticate
     const { data, error } = await supabaseClient.auth.signInWithPassword({
         email: email,
         password: password
     });
 
-    if (error) {
-        toggleLoading(false);
-        showToast(error.message, 'error');
-        return;
-    }
+    toggleLoading(false);
 
-    // 2. Fetch Role & Redirect
-    if (data.session) {
-        await redirectUserBasedOnRole(data.session.user.id);
+    if (error) {
+        showToast(error.message, 'error');
+    } else {
+        // Successful Login
+        window.location.href = 'index.html';
     }
 }
 
-// --- 3. SIGNUP LOGIC (Students Only) ---
+// --- 2. SIGNUP LOGIC ---
 async function handleSignup(e) {
     e.preventDefault();
 
@@ -104,7 +76,7 @@ async function handleSignup(e) {
         class_name: document.getElementById('reg-class').value,
         gender: document.getElementById('reg-gender').value,
         mobile: mobile,
-        role: 'student' // Force role to student for public signups
+        role: 'student'
     };
 
     toggleLoading(true);
@@ -120,22 +92,17 @@ async function handleSignup(e) {
     if (error) {
         showToast(error.message, 'error');
     } else {
-        // Supabase usually logs them in automatically after signup if email confirm is off
-        // Or waits for email confirmation.
         if (data.session) {
             showToast("Registration Successful! Redirecting...", 'success');
-            setTimeout(() => {
-                window.location.href = 'student.html';
-            }, 1500);
+            setTimeout(() => window.location.href = 'index.html', 1500);
         } else {
-            // Email confirmation required
             showToast("Registration Successful! Please check your email.", 'success');
             switchAuthView('login');
         }
     }
 }
 
-// --- 4. FORGOT PASSWORD ---
+// --- 3. FORGOT PASSWORD ---
 async function handleForgotPass(e) {
     e.preventDefault();
     const email = document.getElementById('forgot-email').value;
@@ -143,7 +110,7 @@ async function handleForgotPass(e) {
     toggleLoading(true);
 
     // Redirect back to login page after password reset email click
-    const redirectTo = window.location.origin + '/login.html';
+    const redirectTo = window.location.origin + window.location.pathname;
 
     const { data, error } = await supabaseClient.auth.resetPasswordForEmail(email, {
         redirectTo: redirectTo
@@ -162,12 +129,15 @@ async function handleForgotPass(e) {
 // --- UTILITIES ---
 
 function switchAuthView(viewId) {
+    // Hide all views
     document.querySelectorAll('.auth-view').forEach(el => el.classList.add('hidden'));
+    
+    // Show target view
     const target = document.getElementById('view-' + viewId);
     target.classList.remove('hidden');
     
-    // Add animation class
-    target.classList.remove('animate-fade-in'); // Reset to replay
+    // Reset animation
+    target.classList.remove('animate-fade-in');
     void target.offsetWidth; // Trigger reflow
     target.classList.add('animate-fade-in');
 }
