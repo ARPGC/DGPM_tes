@@ -29,7 +29,7 @@ async function checkAdminAuth() {
 
     if (!user || user.role !== 'admin') {
         alert("Access Denied: Admins Only");
-        window.location.href = 'login.html'; // Kick out non-admins
+        window.location.href = 'login.html';
         return;
     }
     
@@ -94,12 +94,12 @@ async function loadDashboardStats() {
 // --- 4. SPORTS MANAGEMENT ---
 async function loadSportsList() {
     const tbody = document.getElementById('sports-table-body');
-    tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-gray-400">Loading...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-400">Loading...</td></tr>';
 
     const { data: sports } = await supabaseClient.from('sports').select('*').order('name');
 
     if(!sports || sports.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-gray-400">No sports added.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-400">No sports added.</td></tr>';
         return;
     }
 
@@ -132,7 +132,7 @@ window.handleAddSport = async function(e) {
     const isPerformance = name.toLowerCase().includes('race') || 
                           name.toLowerCase().includes('jump') || 
                           name.toLowerCase().includes('throw') || 
-                          name.toLowerCase().includes('put'); // shotput
+                          name.toLowerCase().includes('put'); 
 
     const unit = isPerformance ? (name.toLowerCase().includes('race') ? 'Seconds' : 'Meters') : 'Points';
 
@@ -156,12 +156,12 @@ window.toggleSportStatus = async function(id, currentStatus) {
     loadSportsList();
 }
 
-// --- 5. SCHEDULING ENGINE (CORE LOGIC) ---
+// --- 5. SCHEDULING ENGINE ---
 
 window.handleScheduleClick = async function(sportId, sportName, isPerformance) {
     if (isPerformance) {
         // FLOW A: Performance Event (Single Big Match Entry)
-        if (confirm(`Start ${sportName}? This will generate a result sheet for all registered students.`)) {
+        if (confirm(`Start ${sportName}? This will initiate the event for volunteers to enter data.`)) {
             await initPerformanceEvent(sportId, sportName);
         }
     } else {
@@ -173,8 +173,8 @@ window.handleScheduleClick = async function(sportId, sportName, isPerformance) {
 // A. Initialize Race/Throw
 async function initPerformanceEvent(sportId, sportName) {
     // Check if exists
-    const { data: existing } = await supabaseClient.from('matches').select('id').eq('sport_id', sportId);
-    if (existing.length > 0) return showToast("Event already initialized!", "info");
+    const { data: existing } = await supabaseClient.from('matches').select('id').eq('sport_id', sportId).neq('status', 'Completed');
+    if (existing.length > 0) return showToast("Event is already active!", "info");
 
     // Fetch Participants
     const { data: regs } = await supabaseClient.from('registrations')
@@ -194,20 +194,67 @@ async function initPerformanceEvent(sportId, sportName) {
         sport_id: sportId,
         team1_name: sportName,
         team2_name: 'All Participants',
-        status: 'Live', // Ready immediately
+        status: 'Live', // Ready immediately for volunteer input
         is_live: true,
         performance_data: participants
     });
 
     if (error) showToast(error.message, "error");
-    else showToast(`${sportName} started! Volunteers can enter data.`, "success");
+    else showToast(`${sportName} started! Volunteers can now enter data.`, "success");
 }
 
-// B. Initialize Tournament Round
+// B. End Performance Event (CALCULATE WINNERS)
+window.endPerformanceEvent = async function(matchId) {
+    if (!confirm("Are you sure? This will Calculate Ranks (Gold/Silver/Bronze) and Close the event.")) return;
+
+    const { data: match } = await supabaseClient.from('matches').select('performance_data, sports(unit)').eq('id', matchId).single();
+    let arr = match.performance_data;
+    const unit = match.sports.unit;
+
+    // Filter valid entries
+    let validEntries = arr.filter(p => p.result && p.result.trim() !== '');
+    
+    // Sort Logic
+    // Time (Seconds) -> Lower is better
+    // Distance (Meters) -> Higher is better
+    const isDistance = unit === 'Meters' || unit === 'Points';
+    
+    validEntries.sort((a, b) => {
+        const valA = parseFloat(a.result) || 0;
+        const valB = parseFloat(b.result) || 0;
+        return isDistance ? (valB - valA) : (valA - valB);
+    });
+
+    // Assign Ranks & Winners
+    let winners = { gold: null, silver: null, bronze: null };
+    
+    validEntries.forEach((p, i) => {
+        p.rank = i + 1;
+        if(i === 0) winners.gold = p.name;
+        if(i === 1) winners.silver = p.name;
+        if(i === 2) winners.bronze = p.name;
+    });
+
+    // Update DB
+    const { error } = await supabaseClient.from('matches').update({ 
+        performance_data: arr, // Save sorted ranks
+        status: 'Completed',
+        winner_text: `Gold: ${winners.gold || '-'}`,
+        winners_data: winners, // Save explicit winners
+        is_live: false 
+    }).eq('id', matchId);
+
+    if(error) showToast("Error ending event: " + error.message, "error");
+    else {
+        showToast("Event Ended & Winners Declared!", "success");
+        loadMatches('Completed');
+    }
+}
+
+// C. Initialize Tournament Round (Matches)
 async function initTournamentRound(sportId, sportName) {
     showToast("Analyzing Bracket...", "info");
 
-    // Check last round status
     const { data: matches } = await supabaseClient.from('matches')
         .select('round_number, status')
         .eq('sport_id', sportId)
@@ -222,21 +269,15 @@ async function initTournamentRound(sportId, sportName) {
         const { data: teams } = await supabaseClient.from('teams').select('id, name').eq('sport_id', sportId).eq('status', 'Locked');
         candidates = teams || [];
     } else {
-        // NEXT ROUND: Fetch winners
-        if (matches[0].status !== 'Completed') return showToast("Current round matches are still pending!", "error");
+        if (matches[0].status !== 'Completed') return showToast("Current round not finished!", "error");
         
         round = matches[0].round_number + 1;
-        
-        // Use RPC to get winners safely
-        const { data: winners, error } = await supabaseClient.rpc('get_round_winners', { sport_id_input: sportId, round_num: round - 1 });
-        
-        if (error) { console.error(error); return showToast("Error fetching winners", "error"); }
+        const { data: winners } = await supabaseClient.rpc('get_round_winners', { sport_id_input: sportId, round_num: round - 1 });
         candidates = winners.map(w => ({ id: w.team_id, name: w.team_name }));
     }
 
-    if (!candidates || candidates.length < 2) return showToast(`Not enough teams/winners for Round ${round}.`, "error");
+    if (!candidates || candidates.length < 2) return showToast(`Not enough teams for Round ${round}.`, "error");
 
-    // Pair Teams (Shuffle)
     candidates.sort(() => Math.random() - 0.5);
     tempSchedule = [];
 
@@ -250,8 +291,7 @@ async function initTournamentRound(sportId, sportName) {
                 round: round
             });
         } else {
-             // Bye logic could go here
-             showToast(`${candidates[i].name} gets a Bye (Odd number of teams).`, "info");
+             showToast(`${candidates[i].name} gets a Bye.`, "info");
         }
     }
 
@@ -274,16 +314,12 @@ function openSchedulePreviewModal(sportName, round, schedule, sportId) {
                 <select class="input-field p-2 w-full md:w-32 bg-gray-50 border rounded-lg text-sm font-bold" onchange="updateTempSchedule(${idx}, 'location', this.value)">
                     <option value="Main Ground">Main Ground</option>
                     <option value="Court A">Court A</option>
-                    <option value="Court B">Court B</option>
-                    <option value="Indoor Hall">Indoor Hall</option>
                 </select>
             </div>
         </div>
     `).join('');
 
-    // Attach Confirm Handler
     document.getElementById('btn-confirm-schedule').onclick = () => confirmSchedule(sportId);
-    
     document.getElementById('modal-schedule-preview').classList.remove('hidden');
 }
 
@@ -302,7 +338,7 @@ async function confirmSchedule(sportId) {
         team2_id: m.t2.id,
         team1_name: m.t1.name,
         team2_name: m.t2.name,
-        start_time: new Date().toISOString().split('T')[0] + 'T' + m.time, // Today + Time
+        start_time: new Date().toISOString().split('T')[0] + 'T' + m.time,
         location: m.location,
         round_number: m.round,
         status: 'Scheduled'
@@ -315,12 +351,11 @@ async function confirmSchedule(sportId) {
         btn.innerText = "Confirm & Publish";
         btn.disabled = false;
     } else {
-        showToast("Schedule Published Successfully!", "success");
+        showToast("Schedule Published!", "success");
         closeModal('modal-schedule-preview');
-        switchView('matches'); // Go to matches view
+        switchView('matches');
     }
 }
-
 
 // --- 6. MATCH MANAGEMENT (View) ---
 
@@ -352,17 +387,16 @@ window.loadMatches = async function(statusFilter = 'Scheduled') {
 
             <div class="text-center mb-4 pl-3">
                 <h4 class="font-black text-gray-900 text-lg leading-tight">${m.team1_name}</h4>
-                <div class="text-xs font-bold text-gray-400 my-1">VS</div>
-                <h4 class="font-black text-gray-900 text-lg leading-tight">${m.team2_name}</h4>
+                ${!isPerf ? `<div class="text-xs font-bold text-gray-400 my-1">VS</div><h4 class="font-black text-gray-900 text-lg leading-tight">${m.team2_name}</h4>` : ''}
             </div>
 
             <div class="flex justify-between items-center border-t border-gray-50 pt-3 pl-3">
-                <div class="text-xs text-gray-500 font-medium">
-                    <i data-lucide="map-pin" class="w-3 h-3 inline mr-1"></i> ${m.location}
-                </div>
-                ${m.status === 'Scheduled' ? 
-                    `<button onclick="startMatch('${m.id}')" class="px-3 py-1.5 bg-green-500 text-white text-xs font-bold rounded-lg hover:bg-green-600 shadow-sm">Start Now</button>` 
-                    : `<span class="text-xs font-bold text-gray-400">Managed by Volunteers</span>`
+                ${isPerf && m.status === 'Live' ? 
+                    `<button onclick="endPerformanceEvent('${m.id}')" class="w-full px-3 py-2 bg-red-500 text-white text-xs font-bold rounded-lg hover:bg-red-600 shadow-sm">Calculate Winners & End Event</button>`
+                : 
+                    m.status === 'Scheduled' ? 
+                        `<button onclick="startMatch('${m.id}')" class="px-3 py-1.5 bg-green-500 text-white text-xs font-bold rounded-lg hover:bg-green-600 shadow-sm">Start Now</button>` 
+                        : `<span class="text-xs font-bold text-gray-400">${m.winner_text || 'Completed'}</span>`
                 }
             </div>
         </div>
@@ -373,20 +407,76 @@ window.loadMatches = async function(statusFilter = 'Scheduled') {
 window.startMatch = async function(matchId) {
     if(!confirm("Start this match now? It will appear as LIVE.")) return;
     await supabaseClient.from('matches').update({ status: 'Live', is_live: true }).eq('id', matchId);
-    loadMatches('Live'); // Switch tab to see it
+    loadMatches('Live');
     showToast("Match is now LIVE!", "success");
 }
 
+// --- 7. TEAMS MANAGEMENT (FIXED) ---
+async function loadTeamsList() {
+    const grid = document.getElementById('teams-grid');
+    grid.innerHTML = '<p class="col-span-3 text-center text-gray-400 py-10">Loading teams...</p>';
 
-// --- 7. USER MANAGEMENT ---
+    const { data: teams } = await supabaseClient
+        .from('teams')
+        .select('*, sports(name), captain:users!captain_id(first_name, last_name)');
 
+    if (!teams || teams.length === 0) {
+        grid.innerHTML = '<p class="col-span-3 text-center text-gray-400 py-10">No teams created yet.</p>';
+        return;
+    }
+
+    grid.innerHTML = teams.map(t => `
+        <div class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
+            <div class="flex justify-between items-start mb-3">
+                <span class="text-[10px] font-bold uppercase bg-gray-100 px-2 py-1 rounded text-gray-500">${t.sports.name}</span>
+                <span class="text-[10px] font-bold uppercase ${t.status === 'Locked' ? 'text-red-500' : 'text-green-500'}">${t.status}</span>
+            </div>
+            <h4 class="font-bold text-lg text-gray-900">${t.name}</h4>
+            <p class="text-xs text-gray-500 mb-4">Capt: ${t.captain?.first_name || 'Unknown'}</p>
+            <button onclick="viewTeamSquad('${t.id}', '${t.name}')" class="w-full py-2 bg-indigo-50 text-indigo-600 text-xs font-bold rounded-lg hover:bg-indigo-100 transition-colors">
+                View Squad
+            </button>
+        </div>
+    `).join('');
+}
+
+window.viewTeamSquad = async function(teamId, teamName) {
+    const { data: members } = await supabaseClient
+        .from('team_members')
+        .select('users(first_name, last_name, student_id, class_name)')
+        .eq('team_id', teamId)
+        .eq('status', 'Accepted');
+
+    let msg = `Squad for ${teamName}:\n\n`;
+    if(members) {
+        members.forEach((m, i) => {
+            msg += `${i+1}. ${m.users.first_name} ${m.users.last_name} (${m.users.class_name})\n`;
+        });
+    }
+    alert(msg); // Using alert for simplicity, could be a modal
+}
+
+// --- 8. USER MANAGEMENT & ASSIGNMENT ---
 async function loadUsersList() {
     const tbody = document.getElementById('users-table-body');
-    tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-gray-400">Loading users...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-400">Loading users...</td></tr>';
     
-    const { data: users } = await supabaseClient.from('users').select('*').order('created_at', { ascending: false }).limit(50);
+    // Fetch users with their assigned sport name
+    const { data: users } = await supabaseClient
+        .from('users')
+        .select('*, assigned_sport:sports!assigned_sport_id(name)')
+        .order('created_at', { ascending: false })
+        .limit(50);
     
-    tbody.innerHTML = users.map(u => `
+    const { data: sports } = await supabaseClient.from('sports').select('id, name');
+
+    tbody.innerHTML = users.map(u => {
+        // Create sport options for the dropdown
+        const sportOptions = sports.map(s => 
+            `<option value="${s.id}" ${u.assigned_sport_id === s.id ? 'selected' : ''}>${s.name}</option>`
+        ).join('');
+
+        return `
         <tr class="border-b border-gray-50 hover:bg-gray-50">
             <td class="p-4 font-bold text-gray-800 flex items-center gap-2">
                 <div class="w-8 h-8 rounded-full bg-gray-200 overflow-hidden"><img src="${u.avatar_url || 'https://via.placeholder.com/32'}" class="w-full h-full object-cover"></div>
@@ -394,6 +484,14 @@ async function loadUsersList() {
             </td>
             <td class="p-4 text-sm text-gray-600">${u.class_name || '-'}</td>
             <td class="p-4"><span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-gray-100 text-gray-600">${u.role}</span></td>
+            <td class="p-4">
+                ${u.role === 'volunteer' ? 
+                    `<select class="p-1 bg-white border rounded text-xs" onchange="assignVolunteerSport('${u.id}', this.value)">
+                        <option value="">-- Assign Sport --</option>
+                        ${sportOptions}
+                    </select>` 
+                : '-'}
+            </td>
             <td class="p-4 text-right">
                 ${u.role !== 'admin' ? 
                     `<button onclick="promoteUser('${u.id}')" class="text-xs font-bold text-brand-primary hover:underline">Make Volunteer</button>` 
@@ -401,11 +499,18 @@ async function loadUsersList() {
                 }
             </td>
         </tr>
-    `).join('');
+    `}).join('');
+}
+
+window.assignVolunteerSport = async function(userId, sportId) {
+    const val = sportId === "" ? null : sportId;
+    const { error } = await supabaseClient.from('users').update({ assigned_sport_id: val }).eq('id', userId);
+    if(error) showToast("Assignment Failed", "error");
+    else showToast("Volunteer Assigned!", "success");
 }
 
 window.promoteUser = async function(userId) {
-    if(!confirm("Promote this user to Volunteer? They will have access to the Volunteer Panel.")) return;
+    if(!confirm("Promote this user to Volunteer?")) return;
     const { error } = await supabaseClient.from('users').update({ role: 'volunteer' }).eq('id', userId);
     if(error) showToast("Error promoting user", "error");
     else {
