@@ -2,7 +2,7 @@
 const supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
 let currentUser = null;
 let tempSchedule = []; 
-let currentMatchViewFilter = 'Scheduled'; // Track current filter
+let currentMatchViewFilter = 'Scheduled'; // Track current filter state
 
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', async () => {
@@ -115,10 +115,10 @@ async function loadSportsList() {
     sports.forEach(s => {
         const isStarted = activeSportIds.includes(s.id);
         
-        // Button Logic
+        // Button Logic: Hide "Start" if event is already live/scheduled
         let actionBtn = '';
         if (isStarted) {
-             actionBtn = `<span class="text-xs font-bold text-green-600 bg-green-50 px-3 py-1 rounded-lg border border-green-100 flex items-center gap-1 w-max ml-auto"><i data-lucide="activity" class="w-3 h-3"></i> Active</span>`;
+             actionBtn = `<span class="text-xs font-bold text-green-600 bg-green-50 px-3 py-1 rounded-lg border border-green-100 flex items-center gap-1 w-max ml-auto"><i data-lucide="activity" class="w-3 h-3"></i> Event Active</span>`;
         } else {
              actionBtn = `
                 <button onclick="window.handleScheduleClick('${s.id}', '${s.name}', ${s.is_performance})" class="px-4 py-1.5 bg-black text-white rounded-lg text-xs font-bold hover:bg-gray-800 shadow-sm transition-transform active:scale-95 ml-auto block">
@@ -229,7 +229,7 @@ async function initPerformanceEvent(sportId, sportName) {
     }
 }
 
-// END EVENT LOGIC (Fixed to remove Live status)
+// --- END EVENT LOGIC (UI REFRESH FIX) ---
 window.endPerformanceEvent = async function(matchId) {
     if (!confirm("Are you sure? This will Calculate Winners and END the event.")) return;
 
@@ -257,7 +257,7 @@ window.endPerformanceEvent = async function(matchId) {
 
     const finalData = [...validEntries, ...arr.filter(p => !p.result || p.result.trim() === '')];
 
-    // CRITICAL: Set is_live to FALSE
+    // DB Update: Set Status 'Completed' and is_live FALSE
     const { error } = await supabaseClient.from('matches').update({ 
         performance_data: finalData,
         status: 'Completed',
@@ -269,8 +269,14 @@ window.endPerformanceEvent = async function(matchId) {
     if(error) showToast("Error: " + error.message, "error");
     else {
         showToast("Event Ended Successfully!", "success");
-        loadMatches(currentMatchViewFilter); // Refresh current view
-        loadSportsList(); // Refresh sports buttons
+        
+        // Refresh UI immediately to remove "Live" status
+        if (currentMatchViewFilter === 'Live') {
+            loadMatches('Live'); 
+        } else {
+            loadMatches('Completed');
+        }
+        loadSportsList(); // Refresh buttons in sport list
     }
 }
 
@@ -378,15 +384,16 @@ async function confirmSchedule(sportId) {
     }
 }
 
-// --- 6. MATCH MANAGEMENT (Student Card Style View) ---
+// --- 6. MATCH MANAGEMENT (UI OVERHAUL: STUDENT CARD STYLE) ---
 
 window.loadMatches = async function(statusFilter = 'Scheduled') {
-    currentMatchViewFilter = statusFilter; // Update global state
+    currentMatchViewFilter = statusFilter;
     
-    // Update Button Styles
-    ['Scheduled', 'Live', 'Completed'].forEach(s => {
-        // Simple logic to highlight active button if needed, 
-        // assuming buttons have IDs like 'btn-match-Scheduled' (not strictly required if simple text)
+    // Update Button Styles (Visual Feedback)
+    const btns = document.querySelectorAll('#view-matches button');
+    btns.forEach(b => {
+        if(b.innerText.includes(statusFilter)) b.classList.add('bg-gray-100');
+        else b.classList.remove('bg-gray-100');
     });
 
     const container = document.getElementById('matches-grid');
@@ -409,12 +416,12 @@ window.loadMatches = async function(statusFilter = 'Scheduled') {
         const dateObj = new Date(m.start_time);
         const timeStr = dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
         
-        // Badge Logic
+        // Badge Logic (Identical to Student View)
         let badgeHtml = isLive 
             ? `<span class="bg-red-50 text-red-600 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider animate-pulse flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-red-600"></span> LIVE</span>`
             : `<span class="bg-gray-100 text-gray-500 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider">${timeStr}</span>`;
 
-        // Render Card
+        // Card Render
         return `
         <div class="w-full bg-white p-5 rounded-3xl border border-gray-200 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
             
@@ -443,10 +450,10 @@ window.loadMatches = async function(statusFilter = 'Scheduled') {
                  
                  <div>
                     ${isPerf && m.status === 'Live' ? 
-                        `<button onclick="endPerformanceEvent('${m.id}')" class="px-3 py-1.5 bg-red-500 text-white text-xs font-bold rounded-lg hover:bg-red-600 shadow-sm">End Event</button>`
+                        `<button onclick="endPerformanceEvent('${m.id}')" class="px-3 py-1.5 bg-red-500 text-white text-xs font-bold rounded-lg hover:bg-red-600 shadow-sm transition-colors">End Event</button>`
                     : 
                         m.status === 'Scheduled' ? 
-                            `<button onclick="startMatch('${m.id}')" class="px-3 py-1.5 bg-green-500 text-white text-xs font-bold rounded-lg hover:bg-green-600 shadow-sm">Start Now</button>` 
+                            `<button onclick="startMatch('${m.id}')" class="px-3 py-1.5 bg-green-500 text-white text-xs font-bold rounded-lg hover:bg-green-600 shadow-sm transition-colors">Start Now</button>` 
                         : `<span class="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-1 rounded">${m.winner_text || 'Completed'}</span>`
                     }
                  </div>
@@ -461,11 +468,10 @@ window.startMatch = async function(matchId) {
     await supabaseClient.from('matches').update({ status: 'Live', is_live: true }).eq('id', matchId);
     showToast("Match is now LIVE!", "success");
     loadMatches('Live');
-    loadSportsList(); // Refresh sports buttons
+    loadSportsList(); // Update buttons
 }
 
-// --- 7. TEAMS MANAGEMENT & 8. USERS (Identical to previous, preserved) ---
-// (Included for completeness to ensure no logic is cut)
+// --- 7. TEAMS MANAGEMENT & 8. USERS (Standard) ---
 
 async function loadTeamsList() {
     const grid = document.getElementById('teams-grid');
