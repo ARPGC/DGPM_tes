@@ -105,7 +105,6 @@ async function loadSportsList() {
         if (isStarted) {
              actionBtn = `<span class="text-xs font-bold text-green-600 bg-green-50 px-3 py-1 rounded-lg border border-green-100 flex items-center gap-1 w-max ml-auto"><i data-lucide="activity" class="w-3 h-3"></i> Event Active</span>`;
         } else {
-             // Pass sport type explicitly
              actionBtn = `
                 <button onclick="window.handleScheduleClick('${s.id}', '${s.name}', ${s.is_performance}, '${s.type}')" class="px-4 py-1.5 bg-black text-white rounded-lg text-xs font-bold hover:bg-gray-800 shadow-sm transition-transform active:scale-95 ml-auto block">
                     ${s.is_performance ? 'Start Event' : 'Schedule Round'}
@@ -216,18 +215,15 @@ async function initPerformanceEvent(sportId, sportName) {
     }
 }
 
-// FIX: Force update status using RPC to solve "Live" bug
 window.endPerformanceEvent = async function(matchId) {
     if (!confirm("Are you sure? This will Calculate Winners and END the event.")) return;
 
-    // 1. Fetch current results
     const { data: match } = await supabaseClient.from('matches').select('performance_data, sports(unit)').eq('id', matchId).single();
     let arr = match.performance_data;
     const unit = match.sports.unit;
 
     let validEntries = arr.filter(p => p.result && p.result.trim() !== '');
     
-    // Sort Logic
     const isDistance = unit === 'Meters' || unit === 'Points';
     validEntries.sort((a, b) => {
         const valA = parseFloat(a.result) || 0;
@@ -246,22 +242,22 @@ window.endPerformanceEvent = async function(matchId) {
     const finalData = [...validEntries, ...arr.filter(p => !p.result || p.result.trim() === '')];
     const winnerText = `Gold: ${winners.gold || '-'}`;
 
-    // 2. Update Performance Data first (standard update)
+    // 1. Update Data
     await supabaseClient.from('matches').update({ 
         performance_data: finalData,
         winners_data: winners
     }).eq('id', matchId);
 
-    // 3. Force Status Close via RPC (Fixes the bug)
+    // 2. Force Status via RPC (Ensure this function exists in SQL)
     const { error } = await supabaseClient.rpc('force_end_match', { 
         match_id_input: matchId, 
         winner_id_input: null, 
         winner_text_input: winnerText 
     });
 
-    if(error) showToast("Error ending match: " + error.message, "error");
+    if(error) showToast("Error: " + error.message, "error");
     else {
-        showToast("Event Ended & Results Published!", "success");
+        showToast("Event Ended Successfully!", "success");
         loadMatches(currentMatchViewFilter); 
         loadSportsList(); 
     }
@@ -271,9 +267,11 @@ window.endPerformanceEvent = async function(matchId) {
 async function initTournamentRound(sportId, sportName, sportType) {
     showToast("Analyzing Bracket...", "info");
 
+    const intSportId = parseInt(sportId); // Ensure Integer
+
     const { data: matches } = await supabaseClient.from('matches')
         .select('round_number, status')
-        .eq('sport_id', sportId)
+        .eq('sport_id', intSportId)
         .order('round_number', { ascending: false })
         .limit(1);
 
@@ -286,23 +284,22 @@ async function initTournamentRound(sportId, sportName, sportType) {
         // 1. INDIVIDUAL SPORT FIX (RPC Call)
         if (sportType === 'Individual') {
             showToast("Syncing individual players...", "info");
-            // Call the SQL function to create teams automatically
-            const { error: syncError } = await supabaseClient.rpc('prepare_individual_teams', { sport_id_input: sportId });
+            const { error: syncError } = await supabaseClient.rpc('prepare_individual_teams', { sport_id_input: intSportId });
             if (syncError) {
                 console.error(syncError);
-                return showToast("Error syncing players: " + syncError.message, "error");
+                return showToast("Error syncing: " + syncError.message, "error");
             }
         }
 
         // 2. FETCH VALID TEAMS (FULL SQUADS ONLY)
-        const { data: validTeams, error } = await supabaseClient.rpc('get_valid_teams', { sport_id_input: sportId });
+        const { data: validTeams, error } = await supabaseClient.rpc('get_valid_teams', { sport_id_input: intSportId });
         
         if (error) { console.error(error); return showToast("DB Error: " + error.message, "error"); }
         if (!validTeams || validTeams.length < 2) return showToast("Need at least 2 VALID TEAMS to start.", "error");
 
         candidates = validTeams.map(t => ({ id: t.team_id, name: t.team_name }));
         
-        // Auto-Lock these teams
+        // Auto-Lock
         const ids = candidates.map(c => c.id);
         await supabaseClient.from('teams').update({ status: 'Locked' }).in('id', ids);
 
@@ -313,7 +310,7 @@ async function initTournamentRound(sportId, sportName, sportType) {
         round = matches[0].round_number + 1;
         const { data: winners } = await supabaseClient.from('matches')
             .select('winner_id')
-            .eq('sport_id', sportId)
+            .eq('sport_id', intSportId)
             .eq('round_number', round - 1)
             .neq('winner_id', null);
 
@@ -356,7 +353,7 @@ async function initTournamentRound(sportId, sportName, sportType) {
         }
     }
 
-    openSchedulePreviewModal(sportName, round, tempSchedule, sportId);
+    openSchedulePreviewModal(sportName, round, tempSchedule, intSportId);
 }
 
 function openSchedulePreviewModal(sportName, round, schedule, sportId) {
@@ -405,8 +402,8 @@ async function confirmSchedule(sportId) {
         start_time: new Date().toISOString().split('T')[0] + 'T' + m.time,
         location: m.location,
         round_number: m.round,
-        status: m.t2.id ? 'Scheduled' : 'Completed', // Auto-complete Byes
-        winner_id: m.t2.id ? null : m.t1.id,         // Auto-win Byes
+        status: m.t2.id ? 'Scheduled' : 'Completed', 
+        winner_id: m.t2.id ? null : m.t1.id,         
         winner_text: m.t2.id ? null : `${m.t1.name} (Bye)`,
         match_type: m.type
     }));
@@ -425,12 +422,11 @@ async function confirmSchedule(sportId) {
     }
 }
 
-// --- 6. MATCH MANAGEMENT (STUDENT CARD UI) ---
+// --- 6. MATCH MANAGEMENT ---
 
 window.loadMatches = async function(statusFilter = 'Scheduled') {
     currentMatchViewFilter = statusFilter;
     
-    // Update Button Styles
     const btns = document.querySelectorAll('#view-matches button');
     btns.forEach(b => {
         if(b.innerText.includes(statusFilter)) {
@@ -520,7 +516,7 @@ window.startMatch = async function(matchId) {
     loadSportsList();
 }
 
-// --- 7. TEAMS & 8. USERS (Standard Logic Preserved) ---
+// --- 7. TEAMS & 8. USERS (Standard Logic) ---
 
 async function loadTeamsList() {
     const grid = document.getElementById('teams-grid');
