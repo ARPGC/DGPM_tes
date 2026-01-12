@@ -148,10 +148,8 @@ function setupTabSystem() {
 
 // --- 4. HOME DASHBOARD (LATEST CHAMPIONS) ---
 async function loadLatestChampions() {
-    // 1. Find or Create container
     let container = document.getElementById('home-champions-list');
     if (!container) {
-        // Inject HTML if missing
         const parent = document.getElementById('view-home');
         const section = document.createElement('div');
         section.innerHTML = `
@@ -160,22 +158,19 @@ async function loadLatestChampions() {
             </h3>
             <div id="home-champions-list" class="space-y-3"></div>
         `;
-        // Insert before 'Live Highlights' (approx logic, usually 3rd child)
         if(parent.children.length > 2) parent.insertBefore(section, parent.children[2]);
         else parent.appendChild(section);
-        
         container = document.getElementById('home-champions-list');
         lucide.createIcons();
     }
 
     container.innerHTML = '<div class="animate-pulse h-20 bg-gray-200 dark:bg-gray-800 rounded-xl"></div>';
 
-    // 2. Fetch Completed Matches with Winners Data
     const { data: matches } = await supabaseClient
         .from('matches')
         .select('*, sports(name)')
         .eq('status', 'Completed')
-        .not('winners_data', 'is', null) // Only where winners exist
+        .not('winners_data', 'is', null) 
         .order('created_at', { ascending: false })
         .limit(3);
 
@@ -231,7 +226,7 @@ async function loadSchedule() {
     const { data: matches } = await supabaseClient
         .from('matches')
         .select('*, sports(name, icon, type, is_performance)')
-        .order('start_time', { ascending: false }); // Latest first
+        .order('start_time', { ascending: false });
 
     if (!matches || matches.length === 0) {
         container.innerHTML = `
@@ -269,10 +264,8 @@ async function loadSchedule() {
             ? `<span class="bg-red-50 dark:bg-red-900/40 text-red-600 dark:text-red-400 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider animate-pulse">LIVE NOW</span>`
             : `<span class="bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider">${dateStr} • ${timeStr}</span>`;
 
-        // Display Score or Winner Text
         let footerText = '';
         if(m.status === 'Completed') {
-            // Check for explicit Gold winner first
             if(m.winners_data && m.winners_data.gold) {
                 footerText = `<span class="text-yellow-600 flex items-center gap-1">🥇 ${m.winners_data.gold}</span>`;
             } else {
@@ -329,31 +322,23 @@ window.openMatchDetails = async function(matchId) {
 
     const isPerf = match.sports.is_performance;
 
-    // Populate Header
     document.getElementById('md-sport-name').innerText = match.sports.name;
     document.getElementById('md-match-status').innerText = match.status;
 
-    // Toggle Layouts
     document.getElementById('md-layout-team').classList.add('hidden');
     document.getElementById('md-layout-race').classList.add('hidden');
 
     if (!isPerf) {
-        // TEAM SPORT LAYOUT
         document.getElementById('md-layout-team').classList.remove('hidden');
-        
         document.getElementById('md-t1-name').innerText = match.team1_name;
         document.getElementById('md-t2-name').innerText = match.team2_name;
         document.getElementById('md-t1-score').innerText = match.score1 || '0';
         document.getElementById('md-t2-score').innerText = match.score2 || '0';
-        
         document.getElementById('md-list-t1-title').innerText = match.team1_name;
         document.getElementById('md-list-t2-title').innerText = match.team2_name;
-
         loadSquadList(match.team1_id, 'md-list-t1');
         loadSquadList(match.team2_id, 'md-list-t2');
-
     } else {
-        // RACE / PERFORMANCE LAYOUT
         document.getElementById('md-layout-race').classList.remove('hidden');
         document.getElementById('md-race-metric-header').innerText = match.sports.unit || 'Result';
 
@@ -365,7 +350,7 @@ window.openMatchDetails = async function(matchId) {
         if (!results || results.length === 0) {
             tbody.innerHTML = '<tr><td colspan="3" class="px-4 py-8 text-center text-gray-400 italic">No results available yet.</td></tr>';
         } else {
-            // --- CRITICAL SORTING: Low to High (Rank 1 top) ---
+            // --- CRITICAL SORT: Low to High (Rank 1 top) ---
             results.sort((a, b) => (a.rank || 999) - (b.rank || 999));
 
             tbody.innerHTML = results.map(r => {
@@ -394,7 +379,7 @@ window.openMatchDetails = async function(matchId) {
     document.getElementById('modal-match-details').classList.remove('hidden');
 }
 
-// Helper: Load Squad List for Teams
+// Helper: Load Squad List
 async function loadSquadList(teamId, containerId) {
     const container = document.getElementById(containerId);
     container.innerHTML = '<p class="text-xs text-gray-400 italic">Loading...</p>';
@@ -482,7 +467,6 @@ window.loadTeamMarketplace = async function() {
          return;
     }
 
-    // Filter by Gender (Simple rule: Match Captain's Gender)
     const validTeams = teams.filter(t => t.captain?.gender === currentUser.gender);
 
     const teamPromises = validTeams.map(async (t) => {
