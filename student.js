@@ -9,11 +9,6 @@ let allSportsList = [];
 const DEFAULT_TEAM_SIZE = 5;
 const DEFAULT_AVATAR = "https://t4.ftcdn.net/jpg/05/89/93/27/360_F_589932782_vQAEAZhHnq1QCGu5ikwrYaQD0Mmurm0N.jpg";
 
-const TEAM_SPORTS_WITH_VIEW = [
-    'Box cricket', 'Volleyball', 'Basketball', 'Football', 
-    'Rugby', 'Kho-kho', 'Tug of war', 'Kabbaddi'
-];
-
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', async () => {
     lucide.createIcons();
@@ -111,8 +106,6 @@ async function loadUserStats() {
         .select('*', { count: 'exact', head: true })
         .eq('user_id', currentUser.id);
 
-    // Simple stat: Just counting registrations for now
-    // Advanced: Count wins from matches table if linked
     document.getElementById('stat-matches-played').innerText = matches || 0;
 }
 
@@ -155,12 +148,56 @@ function setupTabSystem() {
 
 // --- 4. HOME DASHBOARD (LATEST CHAMPIONS) ---
 async function loadLatestChampions() {
-    // We reuse the "Live Highlights" section container on Home for Champions
-    // Ideally, add a specific container in student.html for this, 
-    // but for now we append to view-home if not present.
-    
-    // Check if container exists, if not create logic (skipped for brevity, assuming structure)
-    // We will inject into a new "Recent Winners" section if you added one, or replace highlights.
+    // 1. Find or Create container
+    let container = document.getElementById('home-champions-list');
+    if (!container) {
+        // Inject HTML if missing
+        const parent = document.getElementById('view-home');
+        const section = document.createElement('div');
+        section.innerHTML = `
+            <h3 class="font-bold text-lg mb-3 flex items-center gap-2 mt-6">
+                <i data-lucide="medal" class="w-5 h-5 text-yellow-500"></i> Latest Champions
+            </h3>
+            <div id="home-champions-list" class="space-y-3"></div>
+        `;
+        // Insert before 'Live Highlights' (approx logic, usually 3rd child)
+        if(parent.children.length > 2) parent.insertBefore(section, parent.children[2]);
+        else parent.appendChild(section);
+        
+        container = document.getElementById('home-champions-list');
+        lucide.createIcons();
+    }
+
+    container.innerHTML = '<div class="animate-pulse h-20 bg-gray-200 dark:bg-gray-800 rounded-xl"></div>';
+
+    // 2. Fetch Completed Matches with Winners Data
+    const { data: matches } = await supabaseClient
+        .from('matches')
+        .select('*, sports(name)')
+        .eq('status', 'Completed')
+        .not('winners_data', 'is', null) // Only where winners exist
+        .order('created_at', { ascending: false })
+        .limit(3);
+
+    if(!matches || matches.length === 0) {
+        container.innerHTML = '<p class="text-xs text-gray-400 italic">No results declared yet.</p>';
+        return;
+    }
+
+    container.innerHTML = matches.map(m => {
+        const w = m.winners_data || {};
+        return `
+        <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm relative overflow-hidden">
+            <div class="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-yellow-100 to-transparent rounded-bl-full opacity-50"></div>
+            <h4 class="font-black text-gray-900 dark:text-white uppercase mb-2 text-sm">${m.sports.name}</h4>
+            
+            <div class="space-y-1">
+                ${w.gold ? `<div class="flex items-center gap-2 text-xs font-bold"><span class="text-yellow-500">🥇</span> <span class="text-gray-800 dark:text-gray-200">${w.gold}</span></div>` : ''}
+                ${w.silver ? `<div class="flex items-center gap-2 text-xs font-bold"><span class="text-gray-400">🥈</span> <span class="text-gray-600 dark:text-gray-400">${w.silver}</span></div>` : ''}
+                ${w.bronze ? `<div class="flex items-center gap-2 text-xs font-bold"><span class="text-orange-700">🥉</span> <span class="text-gray-600 dark:text-gray-400">${w.bronze}</span></div>` : ''}
+            </div>
+        </div>
+    `}).join('');
 }
 
 // --- 5. SCHEDULE MODULE ---
@@ -235,10 +272,11 @@ async function loadSchedule() {
         // Display Score or Winner Text
         let footerText = '';
         if(m.status === 'Completed') {
-            footerText = m.winner_text || `Winner: ${m.winner_id ? 'Determined' : 'TBA'}`;
-            // If Winners Data (Gold/Silver/Bronze) exists, show Gold
+            // Check for explicit Gold winner first
             if(m.winners_data && m.winners_data.gold) {
-                footerText = `<span class="text-yellow-600">🥇 ${m.winners_data.gold}</span>`;
+                footerText = `<span class="text-yellow-600 flex items-center gap-1">🥇 ${m.winners_data.gold}</span>`;
+            } else {
+                footerText = m.winner_text || `Winner: ${m.winner_id ? 'Determined' : 'TBA'}`;
             }
         } else {
             footerText = isPerf ? 'Entries Open' : `${m.score1 || 0} - ${m.score2 || 0}`;
@@ -327,7 +365,7 @@ window.openMatchDetails = async function(matchId) {
         if (!results || results.length === 0) {
             tbody.innerHTML = '<tr><td colspan="3" class="px-4 py-8 text-center text-gray-400 italic">No results available yet.</td></tr>';
         } else {
-            // Sort just in case (Rank 1 top)
+            // --- CRITICAL SORTING: Low to High (Rank 1 top) ---
             results.sort((a, b) => (a.rank || 999) - (b.rank || 999));
 
             tbody.innerHTML = results.map(r => {
@@ -335,11 +373,12 @@ window.openMatchDetails = async function(matchId) {
                 if(r.rank === 1) rankIcon = '🥇';
                 if(r.rank === 2) rankIcon = '🥈';
                 if(r.rank === 3) rankIcon = '🥉';
+                if(!r.rank) rankIcon = '-';
 
                 return `
                 <tr class="bg-white dark:bg-gray-800 border-b dark:border-gray-700">
                     <td class="px-4 py-3 font-medium text-gray-900 dark:text-white text-center">
-                        ${rankIcon || '-'}
+                        ${rankIcon}
                     </td>
                     <td class="px-4 py-3 text-gray-600 dark:text-gray-300">
                         ${r.name || 'Unknown'}
