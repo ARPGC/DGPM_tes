@@ -19,11 +19,16 @@
                     },
                     animation: {
                         'fade-in': 'fadeIn 0.3s ease-out',
+                        'scale-up': 'scaleUp 0.2s ease-out',
                     },
                     keyframes: {
                         fadeIn: {
-                            '0%': { opacity: '0', transform: 'translateY(10px)' },
-                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        scaleUp: {
+                            '0%': { transform: 'scale(0.95)', opacity: '0' },
+                            '100%': { transform: 'scale(1)', opacity: '1' },
                         }
                     }
                 }
@@ -94,6 +99,27 @@
     <footer class="text-center py-8 text-xs text-gray-400 font-medium">
         <p>&copy; 2026 URJA Sports Council</p>
     </footer>
+
+    <div id="modal-confirm" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+        <div class="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl relative animate-scale-up">
+            <div class="text-center">
+                <div class="w-16 h-16 bg-brand-primary/10 text-brand-primary rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i data-lucide="help-circle" class="w-8 h-8"></i>
+                </div>
+                <h3 id="confirm-title" class="text-xl font-black text-gray-900 mb-2">Confirm Action</h3>
+                <p id="confirm-desc" class="text-sm text-gray-500 font-medium mb-6 leading-relaxed">Are you sure you want to proceed?</p>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <button id="btn-confirm-cancel" class="py-3.5 rounded-xl font-bold text-sm bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors">
+                        Cancel
+                    </button>
+                    <button id="btn-confirm-yes" class="py-3.5 rounded-xl font-bold text-sm bg-brand-primary text-white shadow-lg hover:bg-indigo-700 transition-colors">
+                        Yes, Proceed
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div id="toast-container" class="fixed bottom-10 left-1/2 transform -translate-x-1/2 z-[70] transition-all duration-300 opacity-0 pointer-events-none translate-y-10 w-11/12 max-w-sm"></div>
 
