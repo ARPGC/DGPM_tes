@@ -185,7 +185,7 @@ async function loadDashboardStats() {
     document.getElementById('dash-total-teams').innerText = teamCount || 0;
 }
 
-// --- 8. SPORTS MANAGEMENT (UPDATED) ---
+// --- 8. SPORTS MANAGEMENT (SPLIT JR/SR BUTTONS) ---
 async function loadSportsList() {
     const tablePerf = document.getElementById('sports-table-performance');
     const tableTourn = document.getElementById('sports-table-tournament');
@@ -200,10 +200,9 @@ async function loadSportsList() {
         .select('sport_id, match_type')
         .neq('status', 'Completed');
 
-    // Separate Active Status
-    const activeJr = activeMatches?.filter(m => m.match_type?.includes('Junior')).map(m => m.sport_id) || [];
-    const activeSr = activeMatches?.filter(m => m.match_type?.includes('Senior')).map(m => m.sport_id) || [];
-    const activePerf = activeMatches?.filter(m => m.match_type?.includes('Performance')).map(m => m.sport_id) || [];
+    // Categorize Active Matches
+    const activeJr = activeMatches?.filter(m => m.match_type?.includes('(Jr)') || m.match_type?.includes('(Junior)')).map(m => m.sport_id) || [];
+    const activeSr = activeMatches?.filter(m => m.match_type?.includes('(Sr)') || m.match_type?.includes('(Senior)')).map(m => m.sport_id) || [];
 
     allSportsCache = sports || [];
 
@@ -213,21 +212,25 @@ async function loadSportsList() {
     let tourHtml = '';
 
     sports.forEach(s => {
-        let actionBtn = '';
-        
-        if (s.is_performance) {
-            // Performance: Single button starts both
-            const isActive = activePerf.includes(s.id);
-            if (isActive) {
-                actionBtn = `<span class="text-xs font-bold text-green-600 bg-green-50 px-3 py-1 rounded flex items-center gap-1 ml-auto w-max"><span class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span> Active</span>`;
-            } else {
-                actionBtn = `<button onclick="window.handleScheduleClick('${s.id}', '${s.name}', true, '${s.type}')" class="px-4 py-1.5 bg-black text-white rounded text-xs font-bold hover:bg-gray-800">Start Event</button>`;
-            }
-        } else {
-            // Tournament: Split Buttons for Jr & Sr
-            const isJrActive = activeJr.includes(s.id);
-            const isSrActive = activeSr.includes(s.id);
+        const isJrActive = activeJr.includes(s.id);
+        const isSrActive = activeSr.includes(s.id);
 
+        let actionBtn = '';
+
+        if (s.is_performance) {
+            // PERFORMANCE: Two distinct start buttons
+            const btnJr = isJrActive 
+                ? `<span class="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded border border-green-100">Jr Active</span>`
+                : `<button onclick="window.handleScheduleClick('${s.id}', '${s.name}', true, '${s.type}', 'Junior')" class="px-3 py-1.5 bg-blue-600 text-white rounded text-[10px] font-bold hover:bg-blue-700 shadow-sm">Start Jr</button>`;
+
+            const btnSr = isSrActive
+                ? `<span class="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded border border-green-100">Sr Active</span>`
+                : `<button onclick="window.handleScheduleClick('${s.id}', '${s.name}', true, '${s.type}', 'Senior')" class="px-3 py-1.5 bg-black text-white rounded text-[10px] font-bold hover:bg-gray-800 shadow-sm">Start Sr</button>`;
+            
+            actionBtn = `<div class="flex items-center gap-2 justify-end">${btnJr} ${btnSr}</div>`;
+
+        } else {
+            // TOURNAMENT: Two distinct schedule buttons
             const btnJr = isJrActive 
                 ? `<span class="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded border border-green-100">Jr Live</span>`
                 : `<button onclick="window.handleScheduleClick('${s.id}', '${s.name}', false, '${s.type}', 'Junior')" class="px-3 py-1.5 bg-blue-600 text-white rounded text-[10px] font-bold hover:bg-blue-700 shadow-sm">Sched Jr</button>`;
@@ -300,48 +303,63 @@ window.toggleSportStatus = async function(id, currentStatus) {
 
 // --- 9. SCHEDULER & EVENT ENGINE (SPLIT LOGIC) ---
 
-window.handleScheduleClick = async function(sportId, sportName, isPerformance, sportType, category = null) {
+window.handleScheduleClick = async function(sportId, sportName, isPerformance, sportType, category) {
     if (isPerformance) {
-        if (confirm(`Start ${sportName}? This creates events for BOTH Jr & Sr.`)) {
-            await initPerformanceEvent(sportId, sportName);
+        if (confirm(`Start ${sportName} (${category})?`)) {
+            await initPerformanceEvent(sportId, sportName, category);
         }
     } else {
-        // Pass Category Explicitly
         await initTournamentRound(sportId, sportName, sportType, category);
     }
 }
 
-// A. PERFORMANCE EVENTS
-async function initPerformanceEvent(sportId, sportName) {
-    const { data: existing } = await supabaseClient.from('matches').select('id').eq('sport_id', sportId).neq('status', 'Completed');
-    if (existing && existing.length > 0) return showToast("Event active!", "info");
+// A. PERFORMANCE EVENTS (Updated to handle Category)
+async function initPerformanceEvent(sportId, sportName, category) {
+    // Check if this specific category is active
+    const typeSuffix = category === 'Junior' ? 'Jr' : 'Sr';
+    const { data: existing } = await supabaseClient.from('matches')
+        .select('id')
+        .eq('sport_id', sportId)
+        .eq('match_type', `Performance (${typeSuffix})`)
+        .neq('status', 'Completed');
+
+    if (existing && existing.length > 0) return showToast(`${category} Event is already active!`, "info");
 
     const { data: regs } = await supabaseClient.from('registrations')
         .select('user_id, users(first_name, last_name, student_id, class_name)')
         .eq('sport_id', sportId);
 
-    if (!regs || regs.length === 0) return showToast("No registrations.", "error");
+    if (!regs || regs.length === 0) return showToast("No registrations found.", "error");
 
-    const juniors = regs.filter(r => ['FYJC', 'SYJC'].includes(r.users.class_name));
-    const seniors = regs.filter(r => !['FYJC', 'SYJC'].includes(r.users.class_name));
-
-    if (juniors.length > 0) {
-        const pData = juniors.map(r => ({ id: r.user_id, name: `${r.users.first_name} ${r.users.last_name}`, result: '', rank: 0 }));
-        const { data: m } = await supabaseClient.from('matches').insert({
-            sport_id: sportId, team1_name: `${sportName} (Junior)`, team2_name: 'Participants', status: 'Live', is_live: true, performance_data: pData, match_type: 'Performance (Jr)'
-        }).select().single();
-        syncToRealtime(m.id);
+    // Filter Participants by Category
+    let participants = [];
+    if (category === 'Junior') {
+        participants = regs.filter(r => ['FYJC', 'SYJC'].includes(r.users.class_name));
+    } else {
+        participants = regs.filter(r => !['FYJC', 'SYJC'].includes(r.users.class_name));
     }
 
-    if (seniors.length > 0) {
-        const pData = seniors.map(r => ({ id: r.user_id, name: `${r.users.first_name} ${r.users.last_name}`, result: '', rank: 0 }));
-        const { data: m } = await supabaseClient.from('matches').insert({
-            sport_id: sportId, team1_name: `${sportName} (Senior)`, team2_name: 'Participants', status: 'Live', is_live: true, performance_data: pData, match_type: 'Performance (Sr)'
-        }).select().single();
-        syncToRealtime(m.id);
-    }
+    if (participants.length === 0) return showToast(`No ${category} participants found.`, "error");
 
-    showToast("Events Started!", "success");
+    const pData = participants.map(r => ({ 
+        id: r.user_id, 
+        name: `${r.users.first_name} ${r.users.last_name}`, 
+        result: '', 
+        rank: 0 
+    }));
+
+    const { data: m } = await supabaseClient.from('matches').insert({
+        sport_id: sportId, 
+        team1_name: `${sportName} (${category})`, 
+        team2_name: 'Participants', 
+        status: 'Live', 
+        is_live: true, 
+        performance_data: pData, 
+        match_type: `Performance (${typeSuffix})` // Distinct match type
+    }).select().single();
+
+    syncToRealtime(m.id);
+    showToast(`${category} Event Started!`, "success");
     loadSportsList();
 }
 
@@ -352,25 +370,35 @@ window.endPerformanceEvent = async function(matchId) {
     let arr = match.performance_data;
     const isDist = ['Meters', 'Points'].includes(match.sports.unit);
 
-    let valid = arr.filter(p => p.result && p.result.trim() !== '');
-    valid.sort((a, b) => isDist ? (parseFloat(b.result) - parseFloat(a.result)) : (parseFloat(a.result) - parseFloat(b.result)));
+    let validEntries = arr.filter(p => p.result && p.result.trim() !== '');
+    validEntries.sort((a, b) => {
+        const valA = parseFloat(a.result) || 0;
+        const valB = parseFloat(b.result) || 0;
+        return isDist ? (valB - valA) : (valA - valB);
+    });
 
     let winners = { gold: null, silver: null, bronze: null };
-    valid.forEach((p, i) => {
+    validEntries.forEach((p, i) => {
         p.rank = i + 1;
         if(i === 0) winners.gold = p.name;
         if(i === 1) winners.silver = p.name;
         if(i === 2) winners.bronze = p.name;
     });
 
-    const finalData = [...valid, ...arr.filter(p => !p.result || p.result.trim() === '')];
-    const wText = `Gold: ${winners.gold||'-'}, Silver: ${winners.silver||'-'}, Bronze: ${winners.bronze||'-'}`;
+    const finalData = [...validEntries, ...arr.filter(p => !p.result || p.result.trim() === '')];
+    const winnerText = `Gold: ${winners.gold || '-'}, Silver: ${winners.silver || '-'}, Bronze: ${winners.bronze || '-'}`;
 
-    await supabaseClient.from('matches').update({ performance_data: finalData, status: 'Completed', winner_text: wText, winners_data: winners, is_live: false }).eq('id', matchId);
-    
-    syncToRealtime(matchId);
-    showToast("Event Ended!", "success");
-    loadMatches(currentMatchViewFilter); 
+    const { error } = await supabaseClient.from('matches').update({ 
+        performance_data: finalData, status: 'Completed', winner_text: winnerText, winners_data: winners, is_live: false 
+    }).eq('id', matchId);
+
+    if(error) showToast("Error: " + error.message, "error");
+    else {
+        showToast("Event Ended & Medals Declared!", "success");
+        syncToRealtime(matchId);
+        loadMatches(currentMatchViewFilter); 
+        loadSportsList(); // Update buttons
+    }
 }
 
 // B. TOURNAMENT SCHEDULER (CATEGORY SPECIFIC)
@@ -414,8 +442,6 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
         const winnerIds = winners.map(w => w.winner_id);
         const { data: teamDetails } = await supabaseClient.from('teams').select('id, name').in('id', winnerIds);
         
-        // Simple progression: If you won, you are in.
-        // (Production app would check exactly which round they won, but this works for basic flow)
         candidates = teamDetails.map(t => ({id: t.id, name: t.name}));
     }
 
