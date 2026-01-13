@@ -3,6 +3,7 @@ const supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.s
 let currentUser = null;
 let currentSportId = null;
 let allMatchesCache = []; 
+let currentLiveMatchId = null; // Track active match in full view
 
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', async () => {
@@ -29,7 +30,6 @@ async function checkAuth() {
 
     currentUser = user;
     
-    // SAFETY CHECK: Ensure elements exist before setting text
     const sportNameEl = document.getElementById('assigned-sport-name');
     const welcomeEl = document.getElementById('welcome-msg');
 
@@ -52,7 +52,7 @@ function logout() {
 // --- MATCH MANAGEMENT ---
 async function loadAssignedMatches() {
     const container = document.getElementById('matches-container');
-    if (container) container.innerHTML = '<div class="text-center py-10"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary mx-auto"></div></div>';
+    if (container && allMatchesCache.length === 0) container.innerHTML = '<div class="text-center py-10"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary mx-auto"></div></div>';
 
     const { data: matches, error } = await supabaseClient
         .from('matches')
@@ -63,7 +63,14 @@ async function loadAssignedMatches() {
 
     if (error) return showToast(error.message, "error");
 
+    // SORT: Live matches first
     allMatchesCache = matches || [];
+    allMatchesCache.sort((a, b) => {
+        if (a.status === 'Live' && b.status !== 'Live') return -1;
+        if (a.status !== 'Live' && b.status === 'Live') return 1;
+        return 0; // Keep original time sort
+    });
+
     renderMatches(allMatchesCache);
 }
 
@@ -77,7 +84,7 @@ window.filterMatches = function() {
     renderMatches(filtered);
 }
 
-// --- RENDER LOGIC ---
+// --- RENDER LIST ---
 function renderMatches(matches) {
     const container = document.getElementById('matches-container');
     if (!container) return;
@@ -96,8 +103,36 @@ function renderMatches(matches) {
         const isLive = m.status === 'Live';
         const startTime = new Date(m.start_time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
         
-        // 1. SCHEDULED STATE
-        if (!isLive) {
+        // LIVE MATCH CARD (Prioritized)
+        if (isLive) {
+            return `
+            <div onclick="openMatchPanel('${m.id}')" class="bg-white p-5 rounded-[1.5rem] border-2 border-green-500 shadow-xl shadow-green-50 relative overflow-hidden cursor-pointer active:scale-[0.98] transition-all group">
+                <div class="absolute top-0 left-0 w-full bg-green-500 text-white text-[10px] font-bold text-center py-1 uppercase tracking-widest animate-pulse">
+                    Tap to Manage
+                </div>
+                
+                <div class="mt-6 flex justify-between items-center px-2">
+                    <div class="text-center w-5/12">
+                        <h4 class="font-bold text-lg text-gray-900 leading-tight line-clamp-1">${m.team1_name}</h4>
+                        <span class="text-2xl font-black text-brand-primary block mt-1">${m.score1 || 0}</span>
+                    </div>
+                    <span class="text-gray-300 font-black text-xs">VS</span>
+                    <div class="text-center w-5/12">
+                        <h4 class="font-bold text-lg text-gray-900 leading-tight line-clamp-1">${m.team2_name}</h4>
+                        <span class="text-2xl font-black text-brand-primary block mt-1">${m.score2 || 0}</span>
+                    </div>
+                </div>
+                
+                <div class="mt-4 text-center">
+                    <span class="inline-flex items-center gap-1 text-xs font-bold text-green-600 bg-green-50 px-3 py-1.5 rounded-full group-hover:bg-green-100 transition-colors">
+                        <i data-lucide="maximize-2" class="w-3 h-3"></i> Open Controls
+                    </span>
+                </div>
+            </div>`;
+        } 
+        
+        // SCHEDULED MATCH CARD
+        else {
             return `
             <div class="bg-white p-5 rounded-[1.5rem] border border-gray-100 shadow-sm relative transition-all hover:shadow-md">
                 <div class="flex justify-between items-start mb-4">
@@ -115,67 +150,90 @@ function renderMatches(matches) {
                     Start Match
                 </button>
             </div>`;
-        } 
-        
-        // 2. LIVE STATE
-        else {
-            return `
-            <div class="bg-white p-5 rounded-[1.5rem] border-2 border-green-500 shadow-xl shadow-green-100 relative overflow-hidden">
-                <div class="absolute top-0 left-0 w-full bg-green-500 text-white text-[10px] font-bold text-center py-1 uppercase tracking-widest animate-pulse">
-                    Match Live
-                </div>
-                
-                <div class="mt-8 flex justify-between items-center gap-2">
-                    <div class="flex-1 flex flex-col items-center bg-gray-50 p-3 rounded-2xl border border-gray-100">
-                        <h4 class="font-bold text-sm text-center mb-3 truncate w-full px-1" title="${m.team1_name}">${m.team1_name}</h4>
-                        <div class="flex items-center gap-3">
-                            <button onclick="updateScore('${m.id}', 'score1', -1, ${m.score1})" class="w-9 h-9 rounded-full bg-white border border-gray-200 text-gray-500 hover:bg-gray-100 flex items-center justify-center font-bold text-xl active:scale-90 transition-transform">-</button>
-                            <span class="text-3xl font-black text-brand-primary tabular-nums">${m.score1 || 0}</span>
-                            <button onclick="updateScore('${m.id}', 'score1', 1, ${m.score1})" class="w-9 h-9 rounded-full bg-black text-white flex items-center justify-center font-bold text-xl shadow-lg active:scale-90 transition-transform">+</button>
-                        </div>
-                    </div>
-
-                    <span class="text-gray-300 font-black text-sm">VS</span>
-
-                    <div class="flex-1 flex flex-col items-center bg-gray-50 p-3 rounded-2xl border border-gray-100">
-                        <h4 class="font-bold text-sm text-center mb-3 truncate w-full px-1" title="${m.team2_name}">${m.team2_name}</h4>
-                        <div class="flex items-center gap-3">
-                            <button onclick="updateScore('${m.id}', 'score2', -1, ${m.score2})" class="w-9 h-9 rounded-full bg-white border border-gray-200 text-gray-500 hover:bg-gray-100 flex items-center justify-center font-bold text-xl active:scale-90 transition-transform">-</button>
-                            <span class="text-3xl font-black text-brand-primary tabular-nums">${m.score2 || 0}</span>
-                            <button onclick="updateScore('${m.id}', 'score2', 1, ${m.score2})" class="w-9 h-9 rounded-full bg-black text-white flex items-center justify-center font-bold text-xl shadow-lg active:scale-90 transition-transform">+</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="mt-6 space-y-3">
-                    <button onclick="declareWalkover('${m.id}')" class="w-full py-2.5 border border-red-100 bg-red-50 text-red-500 font-bold rounded-xl text-xs hover:bg-red-100 transition-colors">
-                        Opponent Absent? Declare Walkover
-                    </button>
-
-                    <div class="p-3 bg-gray-50 rounded-xl border border-gray-100">
-                        <label class="text-[10px] font-bold text-gray-400 uppercase mb-1.5 block tracking-wide ml-1">Declare Official Winner</label>
-                        <select id="winner-select-${m.id}" onchange="enableEndBtn('${m.id}')" class="w-full p-2.5 bg-white border border-gray-200 rounded-lg text-sm font-bold outline-none focus:border-brand-primary transition-colors cursor-pointer">
-                            <option value="">-- Select Winner --</option>
-                            <option value="${m.team1_id}">${m.team1_name}</option>
-                            <option value="${m.team2_id}">${m.team2_name}</option>
-                        </select>
-                    </div>
-
-                    <button id="btn-end-${m.id}" onclick="endMatch('${m.id}')" disabled class="w-full py-3.5 bg-gray-200 text-gray-400 font-bold rounded-xl cursor-not-allowed transition-all">
-                        End Match & Save
-                    </button>
-                </div>
-            </div>`;
         }
     }).join('');
     
     lucide.createIcons();
 }
 
+// --- FULL VIEW MATCH PANEL LOGIC ---
+
+window.openMatchPanel = function(matchId) {
+    const match = allMatchesCache.find(m => m.id === matchId);
+    if(!match) return;
+
+    currentLiveMatchId = matchId;
+    const content = document.getElementById('live-match-content');
+    
+    // Inject HTML for Full View
+    content.innerHTML = `
+        <div class="text-center mb-8">
+            <span class="bg-gray-100 text-gray-500 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wide">Round ${match.round_number}</span>
+        </div>
+
+        <div class="flex justify-between items-start gap-4 mb-8">
+            <div class="flex-1 flex flex-col items-center bg-white p-4 rounded-3xl border border-gray-100 shadow-sm">
+                <div class="w-12 h-12 bg-indigo-50 rounded-full flex items-center justify-center text-brand-primary font-black text-xl mb-3">A</div>
+                <h4 class="font-bold text-base text-center leading-tight mb-4 h-10 flex items-center justify-center w-full overflow-hidden text-ellipsis">${match.team1_name}</h4>
+                
+                <div class="flex items-center gap-4 w-full justify-between bg-gray-50 p-2 rounded-2xl">
+                    <button onclick="updateScore('${match.id}', 'score1', -1, ${match.score1})" class="w-10 h-10 rounded-xl bg-white border border-gray-200 text-gray-500 shadow-sm flex items-center justify-center font-bold text-xl active:scale-90 transition-transform">-</button>
+                    <span id="score1-display" class="text-4xl font-black text-gray-900 tabular-nums">${match.score1 || 0}</span>
+                    <button onclick="updateScore('${match.id}', 'score1', 1, ${match.score1})" class="w-10 h-10 rounded-xl bg-black text-white shadow-lg flex items-center justify-center font-bold text-xl active:scale-90 transition-transform">+</button>
+                </div>
+            </div>
+
+            <div class="pt-20">
+                <span class="text-gray-300 font-black text-sm">VS</span>
+            </div>
+
+            <div class="flex-1 flex flex-col items-center bg-white p-4 rounded-3xl border border-gray-100 shadow-sm">
+                <div class="w-12 h-12 bg-indigo-50 rounded-full flex items-center justify-center text-brand-primary font-black text-xl mb-3">B</div>
+                <h4 class="font-bold text-base text-center leading-tight mb-4 h-10 flex items-center justify-center w-full overflow-hidden text-ellipsis">${match.team2_name}</h4>
+                
+                <div class="flex items-center gap-4 w-full justify-between bg-gray-50 p-2 rounded-2xl">
+                    <button onclick="updateScore('${match.id}', 'score2', -1, ${match.score2})" class="w-10 h-10 rounded-xl bg-white border border-gray-200 text-gray-500 shadow-sm flex items-center justify-center font-bold text-xl active:scale-90 transition-transform">-</button>
+                    <span id="score2-display" class="text-4xl font-black text-gray-900 tabular-nums">${match.score2 || 0}</span>
+                    <button onclick="updateScore('${match.id}', 'score2', 1, ${match.score2})" class="w-10 h-10 rounded-xl bg-black text-white shadow-lg flex items-center justify-center font-bold text-xl active:scale-90 transition-transform">+</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="space-y-4">
+            <button onclick="declareWalkover('${match.id}')" class="w-full py-4 border border-red-100 bg-white text-red-500 font-bold rounded-2xl text-sm shadow-sm hover:bg-red-50 transition-colors flex items-center justify-center gap-2">
+                <i data-lucide="user-x" class="w-4 h-4"></i> Opponent Absent? Declare Walkover
+            </button>
+
+            <div class="p-5 bg-white rounded-3xl border border-gray-100 shadow-lg mt-6">
+                <label class="text-xs font-bold text-gray-400 uppercase mb-3 block tracking-wide ml-1">Declare Official Winner</label>
+                <select id="winner-select-${match.id}" onchange="enableEndBtn('${match.id}')" class="w-full p-4 bg-gray-50 border-none rounded-xl text-base font-bold outline-none focus:ring-2 focus:ring-brand-primary/20 transition-all cursor-pointer mb-4">
+                    <option value="">-- Tap to Select Winner --</option>
+                    <option value="${match.team1_id}">${match.team1_name}</option>
+                    <option value="${match.team2_id}">${match.team2_name}</option>
+                </select>
+
+                <button id="btn-end-${match.id}" onclick="endMatch('${match.id}')" disabled class="w-full py-4 bg-gray-200 text-gray-400 font-bold rounded-xl cursor-not-allowed transition-all flex items-center justify-center gap-2">
+                    <i data-lucide="trophy" class="w-5 h-5"></i> End Match & Save Result
+                </button>
+            </div>
+        </div>
+    `;
+
+    document.getElementById('modal-live-match').classList.remove('hidden');
+    lucide.createIcons();
+}
+
+window.closeMatchPanel = function() {
+    document.getElementById('modal-live-match').classList.add('hidden');
+    currentLiveMatchId = null;
+    loadAssignedMatches(); // Refresh list to update scores on cards
+}
+
 // --- ACTIONS ---
 
 window.startMatch = function(matchId) {
     showConfirmDialog("Start Match?", "It will be visible on Live Boards immediately.", async () => {
+        closeModal('modal-confirm');
         const { error } = await supabaseClient
             .from('matches')
             .update({ status: 'Live', is_live: true, score1: 0, score2: 0 })
@@ -184,8 +242,8 @@ window.startMatch = function(matchId) {
         if (error) showToast("Error starting match", "error");
         else {
             showToast("Match Started!", "success");
-            closeModal('modal-confirm');
-            loadAssignedMatches();
+            await loadAssignedMatches(); // Reload to sort
+            openMatchPanel(matchId); // Auto-open full view
         }
     });
 }
@@ -193,13 +251,22 @@ window.startMatch = function(matchId) {
 window.updateScore = async function(matchId, scoreField, delta, currentVal) {
     const newVal = Math.max(0, (currentVal || 0) + delta);
     
+    // 1. Optimistic UI Update (Full View)
+    const displayId = scoreField + '-display';
+    const displayEl = document.getElementById(displayId);
+    if(displayEl) displayEl.innerText = newVal;
+
+    // 2. Update Cache (for re-renders)
+    const match = allMatchesCache.find(m => m.id === matchId);
+    if(match) match[scoreField] = newVal;
+
+    // 3. Update DB
     const { error } = await supabaseClient
         .from('matches')
         .update({ [scoreField]: newVal })
         .eq('id', matchId);
 
     if (error) showToast("Sync Error", "error");
-    else loadAssignedMatches();
 }
 
 window.enableEndBtn = function(matchId) {
@@ -225,6 +292,7 @@ window.endMatch = function(matchId) {
     if (!winnerId) return showToast("Please select a winner first", "error");
 
     showConfirmDialog("Confirm Result?", `Winner: ${winnerName}\nThis will end the match permanently.`, async () => {
+        closeModal('modal-confirm');
         const { error } = await supabaseClient
             .from('matches')
             .update({ 
@@ -238,8 +306,7 @@ window.endMatch = function(matchId) {
         if (error) showToast("Error ending match", "error");
         else {
             showToast("Match Completed!", "success");
-            closeModal('modal-confirm');
-            loadAssignedMatches();
+            closeMatchPanel();
         }
     });
 }
@@ -247,11 +314,11 @@ window.endMatch = function(matchId) {
 window.declareWalkover = function(matchId) {
     showConfirmDialog("Declare Walkover?", "Is the opponent absent? You will need to select the PRESENT team as the winner.", () => {
         closeModal('modal-confirm');
-        alert("Instructions:\n1. Select the PRESENT team in the 'Declare Official Winner' dropdown.\n2. Click 'End Match'.\n\nThe system will record them as the winner.");
+        showToast("Select the present team as Winner below", "info");
     });
 }
 
-// --- UTILS ---
+// --- UTILS: CONFIRM MODAL & TOAST ---
 
 let confirmCallback = null;
 
@@ -283,11 +350,9 @@ function showToast(msg, type) {
     const icon = document.getElementById('toast-icon');
     const content = document.getElementById('toast-content');
     
-    if(!t || !txt) return; // Safety check
+    if(!t || !txt) return; 
 
     txt.innerText = msg;
-    
-    // Reset classes
     content.className = 'bg-gray-900 text-white px-5 py-4 rounded-2xl shadow-2xl flex items-center gap-4 backdrop-blur-md border border-gray-700/50';
     
     if (type === 'error') {
