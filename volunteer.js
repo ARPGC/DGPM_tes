@@ -1,5 +1,17 @@
 // --- CONFIGURATION ---
+
+// Safety Check
+if (typeof CONFIG === 'undefined' || typeof CONFIG_REALTIME === 'undefined') {
+    console.error("CRITICAL: Config missing. Ensure config.js and config2.js are loaded.");
+    alert("System Error: Config missing.");
+}
+
+// 1. MAIN PROJECT (Auth, Assignments - Write Access)
 const supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
+
+// 2. REALTIME PROJECT (Live Scores - Write Access via Service Key)
+const realtimeClient = window.supabase.createClient(CONFIG_REALTIME.url, CONFIG_REALTIME.serviceKey);
+
 let currentUser = null;
 let currentSportId = null;
 let allMatchesCache = []; 
@@ -47,6 +59,44 @@ async function checkAuth() {
 function logout() {
     supabaseClient.auth.signOut();
     window.location.href = 'login.html';
+}
+
+// --- REALTIME SYNC (THE BRIDGE) ---
+async function syncToRealtime(matchId) {
+    console.log(`[SYNC] Pushing Match ${matchId}...`);
+
+    const { data: match, error } = await supabaseClient
+        .from('matches')
+        .select('*, sports(name)')
+        .eq('id', matchId)
+        .single();
+
+    if(error || !match) {
+        console.error("Sync Error: Main DB fetch failed", error);
+        return;
+    }
+
+    const payload = {
+        id: match.id,
+        sport_name: match.sports?.name || 'Unknown',
+        team1_name: match.team1_name,
+        team2_name: match.team2_name,
+        score1: match.score1 || 0,
+        score2: match.score2 || 0,
+        status: match.status,
+        is_live: match.is_live,
+        round_number: match.round_number,
+        match_type: match.match_type,
+        winner_text: match.winner_text,
+        updated_at: new Date()
+    };
+
+    const { error: rtError } = await realtimeClient
+        .from('live_matches')
+        .upsert(payload);
+
+    if (rtError) console.error("Sync Failed:", rtError);
+    else console.log("[SYNC] Success");
 }
 
 // --- MATCH MANAGEMENT ---
@@ -156,7 +206,7 @@ function renderMatches(matches) {
     lucide.createIcons();
 }
 
-// --- FULL VIEW MATCH PANEL (VERTICAL STACK FIX) ---
+// --- FULL VIEW MATCH PANEL ---
 
 window.openMatchPanel = function(matchId) {
     const match = allMatchesCache.find(m => m.id === matchId);
@@ -183,6 +233,7 @@ function generateMatchHTML(match) {
     const t1Init = match.team1_name.charAt(0).toUpperCase();
     const t2Init = match.team2_name.charAt(0).toUpperCase();
 
+    // Adjusted size of buttons to match (approx 48px height)
     return `
         <div class="flex flex-col gap-6 mb-8 w-full max-w-sm mx-auto">
             
@@ -193,8 +244,8 @@ function generateMatchHTML(match) {
                 <span class="text-6xl font-black text-brand-primary tracking-tighter mb-5">${match.score1 || 0}</span>
                 
                 <div class="flex gap-3 w-full px-2">
-                    <button onclick="updateScore('${match.id}', 'score1', -1, ${match.score1})" class="flex-1 py-3 bg-gray-100 rounded-2xl text-gray-500 font-bold text-2xl active:scale-95 transition-transform">-</button>
-                    <button onclick="updateScore('${match.id}', 'score1', 1, ${match.score1})" class="flex-[2] py-3 bg-brand-primary text-white rounded-2xl font-bold text-3xl shadow-lg shadow-indigo-200 active:scale-95 transition-transform">+</button>
+                    <button onclick="updateScore('${match.id}', 'score1', -1, ${match.score1})" class="w-12 h-12 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 font-bold text-2xl active:scale-90 transition-transform shadow-sm border border-gray-200">-</button>
+                    <button onclick="updateScore('${match.id}', 'score1', 1, ${match.score1})" class="w-12 h-12 flex items-center justify-center bg-brand-primary text-white rounded-full font-bold text-2xl shadow-lg shadow-indigo-200 active:scale-90 transition-transform">+</button>
                 </div>
             </div>
 
@@ -210,8 +261,8 @@ function generateMatchHTML(match) {
                 <span class="text-6xl font-black text-pink-600 tracking-tighter mb-5">${match.score2 || 0}</span>
                 
                 <div class="flex gap-3 w-full px-2">
-                    <button onclick="updateScore('${match.id}', 'score2', -1, ${match.score2})" class="flex-1 py-3 bg-gray-100 rounded-2xl text-gray-500 font-bold text-2xl active:scale-95 transition-transform">-</button>
-                    <button onclick="updateScore('${match.id}', 'score2', 1, ${match.score2})" class="flex-[2] py-3 bg-pink-600 text-white rounded-2xl font-bold text-3xl shadow-lg shadow-pink-200 active:scale-95 transition-transform">+</button>
+                    <button onclick="updateScore('${match.id}', 'score2', -1, ${match.score2})" class="w-12 h-12 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 font-bold text-2xl active:scale-90 transition-transform shadow-sm border border-gray-200">-</button>
+                    <button onclick="updateScore('${match.id}', 'score2', 1, ${match.score2})" class="w-12 h-12 flex items-center justify-center bg-pink-600 text-white rounded-full font-bold text-2xl shadow-lg shadow-pink-200 active:scale-90 transition-transform">+</button>
                 </div>
             </div>
         </div>
@@ -260,6 +311,7 @@ window.startMatch = function(matchId) {
         if (error) showToast("Error starting match", "error");
         else {
             showToast("Match Started!", "success");
+            await syncToRealtime(matchId); // SYNC
             await loadAssignedMatches(); 
             openMatchPanel(matchId); 
         }
@@ -275,7 +327,16 @@ window.updateScore = async function(matchId, scoreField, delta, currentVal) {
         .eq('id', matchId);
 
     if (error) showToast("Sync Error", "error");
-    else loadAssignedMatches(); 
+    else {
+        // Optimistic UI update for speed, then reload
+        const match = allMatchesCache.find(m => m.id === matchId);
+        if(match) {
+            match[scoreField] = newVal;
+            updateLivePanelUI(match); // Instant UI feedback
+        }
+        await syncToRealtime(matchId); // SYNC
+        loadAssignedMatches(); 
+    }
 }
 
 window.enableEndBtn = function(matchId) {
@@ -317,6 +378,7 @@ window.endMatch = function(matchId) {
         if (error) showToast("Error ending match", "error");
         else {
             showToast("Match Completed!", "success");
+            await syncToRealtime(matchId); // SYNC
             closeMatchPanel();
         }
     });
