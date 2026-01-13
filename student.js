@@ -218,7 +218,7 @@ function setupTabSystem() {
             activeNav.classList.remove('text-gray-400', 'dark:text-gray-500');
         }
 
-        if(tabId === 'dashboard') loadDashboard(); // UPDATED: Calls the new dashboard loader
+        if(tabId === 'dashboard') loadDashboard();
         if(tabId === 'register') window.toggleRegisterView('new');
         if(tabId === 'teams') window.toggleTeamView('marketplace');
         if(tabId === 'schedule') window.filterSchedule('upcoming');
@@ -228,7 +228,7 @@ function setupTabSystem() {
 
 // --- 4. DASHBOARD (REALTIME + MAIN DB) ---
 async function loadDashboard() {
-    // 1. Live Matches (Realtime DB - High Priority)
+    // 1. Live Matches (Realtime DB - High Priority - Top of Dash)
     loadLiveMatches();
     
     // 2. Upcoming Matches (Main DB - Safe Fallback)
@@ -245,12 +245,14 @@ async function loadLiveMatches() {
     
     if(!container || !list) return;
 
+    // Fetch from the Realtime DB table 'live_matches'
     const { data: matches } = await realtimeClient
         .from('live_matches')
         .select('*')
         .eq('status', 'Live')
         .order('updated_at', { ascending: false });
 
+    // Show/Hide container based on data presence
     if (!matches || matches.length === 0) {
         container.classList.add('hidden'); 
         return;
@@ -259,29 +261,36 @@ async function loadLiveMatches() {
     container.classList.remove('hidden');
     
     list.innerHTML = matches.map(m => `
-        <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-red-100 dark:border-red-900/30 shadow-lg shadow-red-50/50 relative overflow-hidden mb-4 animate-fade-in">
-            <div class="absolute top-0 right-0 bg-red-600 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl animate-pulse flex items-center gap-1">
+        <div onclick="openMatchDetails('${m.original_match_id}')" class="bg-white dark:bg-gray-800 p-5 rounded-3xl border border-red-100 dark:border-red-900/30 shadow-lg shadow-red-50/50 relative overflow-hidden mb-4 animate-fade-in cursor-pointer active:scale-[0.98] transition-transform">
+            <div class="absolute top-0 right-0 bg-red-600 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl animate-pulse flex items-center gap-1 z-10">
                 <span class="w-1.5 h-1.5 bg-white rounded-full"></span> LIVE
             </div>
-            <div class="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-2">${m.sport_name}</div>
             
-            <div class="flex items-center justify-between gap-2">
+            <div class="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-4 opacity-80">${m.sport_name}</div>
+            
+            <div class="flex items-center justify-between gap-2 relative z-0">
                 <div class="text-left w-5/12">
                     <h3 class="font-black text-lg text-gray-900 dark:text-white leading-tight truncate">${m.team1_name}</h3>
-                    <p class="text-3xl font-black text-gray-900 dark:text-white mt-1">${m.score1 || 0}</p>
+                    <p class="text-3xl font-black text-gray-900 dark:text-white mt-1 tracking-tight">${m.score1 || 0}</p>
                 </div>
-                <div class="text-center w-2/12"><div class="text-[10px] font-bold text-gray-300 bg-gray-50 dark:bg-gray-700 rounded-full w-8 h-8 flex items-center justify-center mx-auto">VS</div></div>
+                
+                <div class="text-center w-2/12">
+                    <div class="text-[10px] font-bold text-gray-300 bg-gray-50 dark:bg-gray-700 rounded-full w-8 h-8 flex items-center justify-center mx-auto">VS</div>
+                </div>
+                
                 <div class="text-right w-5/12">
                     <h3 class="font-black text-lg text-gray-900 dark:text-white leading-tight truncate">${m.team2_name}</h3>
-                    <p class="text-3xl font-black text-gray-900 dark:text-white mt-1">${m.score2 || 0}</p>
+                    <p class="text-3xl font-black text-gray-900 dark:text-white mt-1 tracking-tight">${m.score2 || 0}</p>
                 </div>
             </div>
-            <div class="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 flex justify-between items-center text-xs text-gray-400 font-bold">
-                <span class="flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3"></i> ${m.location || 'Ground'}</span>
-                <span>Round ${m.round_number || 1}</span>
+            
+            <div class="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700 flex justify-between items-center text-xs text-gray-400 font-bold">
+                <span class="flex items-center gap-1.5"><i data-lucide="map-pin" class="w-3.5 h-3.5 text-gray-300"></i> ${m.location || 'Main Ground'}</span>
+                <span class="bg-gray-50 dark:bg-gray-700/50 px-2 py-0.5 rounded text-[10px] uppercase">Round ${m.round_number || 1}</span>
             </div>
         </div>
     `).join('');
+    
     if(window.lucide) lucide.createIcons();
 }
 
@@ -292,37 +301,40 @@ async function loadUpcomingDashboard() {
 
     const { data: matches } = await supabaseClient
         .from('matches')
-        .select('*, sports(name)')
+        .select('*, sports(name, icon)')
         .eq('status', 'Scheduled')
         .order('start_time', { ascending: true })
         .limit(3);
 
     if(!matches || matches.length === 0) {
-        list.innerHTML = '<p class="text-xs text-gray-400 italic text-center py-4">No upcoming matches.</p>';
+        list.innerHTML = '<div class="text-xs text-gray-400 bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 text-center border border-dashed border-gray-200 dark:border-gray-700">No upcoming matches scheduled.</div>';
         return;
     }
 
     list.innerHTML = matches.map(m => `
-        <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between mb-2">
-            <div>
-                <div class="text-[10px] font-bold text-brand-primary uppercase tracking-wide">${m.sports.name}</div>
-                <div class="font-bold text-gray-900 dark:text-white text-sm mt-0.5">${m.team1_name} vs ${m.team2_name}</div>
-                <div class="text-xs text-gray-400 mt-1 flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> ${new Date(m.start_time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+        <div onclick="openMatchDetails('${m.id}')" class="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 flex items-center justify-center text-brand-primary dark:text-indigo-400 shrink-0">
+                    <i data-lucide="${m.sports.icon || 'calendar'}" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <div class="text-[10px] font-bold text-gray-400 uppercase tracking-wide">${m.sports.name}</div>
+                    <div class="font-bold text-sm text-gray-900 dark:text-white mt-0.5 leading-tight w-40 truncate">${m.team1_name} vs ${m.team2_name}</div>
+                </div>
             </div>
-            <div class="bg-gray-50 dark:bg-gray-700 px-3 py-2 rounded-lg text-center">
-                <div class="text-[10px] font-bold text-gray-400 uppercase">${new Date(m.start_time).toLocaleString('default', { month: 'short' })}</div>
-                <div class="text-lg font-black text-gray-900 dark:text-white leading-none">${new Date(m.start_time).getDate()}</div>
+            <div class="text-right">
+                <div class="text-[10px] font-bold text-gray-400 uppercase">${new Date(m.start_time).toLocaleString('default', { weekday: 'short' })}</div>
+                <div class="text-sm font-black text-gray-900 dark:text-white">${new Date(m.start_time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
             </div>
         </div>
     `).join('');
+    
     if(window.lucide) lucide.createIcons();
 }
 
 // C. CHAMPIONS (REALTIME DB)
 async function loadLatestChampions() {
-    let container = document.getElementById('home-champions-list'); // Ensure this ID exists in HTML
-    // Fallback if user uses old HTML ID
-    if (!container) container = document.getElementById('champions-list'); 
+    let container = document.getElementById('home-champions-list'); 
     if (!container) return;
 
     const { data: matches } = await realtimeClient
@@ -359,19 +371,29 @@ async function loadLatestChampions() {
 function setupRealtimeSubscription() {
     if (liveSubscription) return; 
 
+    // Listening to changes on the 'live_matches' table in the Realtime Database
     liveSubscription = realtimeClient
         .channel('public:live_matches')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'live_matches' }, (payload) => {
             const newData = payload.new;
-            if (!newData) return;
+            const eventType = payload.eventType;
 
-            if (newData.status === 'Live') {
+            console.log("Realtime Update:", eventType, newData);
+
+            if (eventType === 'DELETE') {
+                // If a live match is deleted, refresh dashboard to remove it
                 loadLiveMatches();
-                showToast(`Update: ${newData.sport_name} score changed!`);
-            } else if (newData.status === 'Completed') {
-                loadLiveMatches();
-                loadLatestChampions();
-                showToast(`Result: ${newData.sport_name} finished!`);
+            } else if (newData) {
+                if (newData.status === 'Live') {
+                    // Update the live card at the top immediately
+                    loadLiveMatches();
+                    showToast(`⚡ UPDATE: ${newData.sport_name} Score Changed!`, "info");
+                } else if (newData.status === 'Completed') {
+                    // Refresh both live (to remove) and champions (to add)
+                    loadLiveMatches();
+                    loadLatestChampions();
+                    showToast(`🏆 RESULT: ${newData.sport_name} Finished!`, "success");
+                }
             }
         })
         .subscribe();
@@ -423,7 +445,7 @@ async function loadSchedule() {
     }
 
     if (filteredMatches.length === 0) {
-        container.innerHTML = `<p class="text-gray-400 font-medium">No ${currentScheduleView} matches.</p>`;
+        container.innerHTML = `<p class="text-gray-400 font-medium text-center py-6">No ${currentScheduleView} matches.</p>`;
         return;
     }
 
@@ -1003,8 +1025,10 @@ window.showToast = function(msg, type='info') {
     
     if (type === 'error') {
         iconEl.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5 text-red-400"></i>';
-    } else {
+    } else if (type === 'success') {
         iconEl.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5 text-green-400"></i>';
+    } else {
+        iconEl.innerHTML = '<i data-lucide="info" class="w-5 h-5 text-blue-400"></i>';
     }
     
     lucide.createIcons();
