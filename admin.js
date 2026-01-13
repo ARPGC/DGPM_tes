@@ -70,7 +70,6 @@ async function loadDashboardStats() {
     const { count: userCount } = await supabaseClient.from('users').select('*', { count: 'exact', head: true });
     const { count: regCount } = await supabaseClient.from('registrations').select('*', { count: 'exact', head: true });
     const { count: teamCount } = await supabaseClient.from('teams').select('*', { count: 'exact', head: true });
-    // Removed Live Match Count as requested to remove "Live Lights"
     
     document.getElementById('dash-total-users').innerText = userCount || 0;
     document.getElementById('dash-total-regs').innerText = regCount || 0;
@@ -185,7 +184,7 @@ window.handleScheduleClick = async function(sportId, sportName, isPerformance, s
 // A. PERFORMANCE EVENTS
 async function initPerformanceEvent(sportId, sportName) {
     const { data: existing } = await supabaseClient.from('matches').select('id').eq('sport_id', sportId).neq('status', 'Completed');
-    if (existing.length > 0) return showToast("Event is already active!", "info");
+    if (existing && existing.length > 0) return showToast("Event is already active!", "info");
 
     const { data: regs } = await supabaseClient.from('registrations')
         .select('user_id, users(first_name, last_name, student_id)')
@@ -267,123 +266,132 @@ async function initTournamentRound(sportId, sportName, sportType) {
 
     const intSportId = parseInt(sportId); 
 
-    const { data: matches } = await supabaseClient.from('matches')
+    // 1. Get Latest Round Info
+    const { data: latestMatches, error: matchError } = await supabaseClient.from('matches')
         .select('round_number, status')
         .eq('sport_id', intSportId)
         .order('round_number', { ascending: false })
         .limit(1);
 
+    if (matchError) return showToast("DB Error: " + matchError.message, "error");
+
     let round = 1;
     let candidates = [];
 
-    if (!matches || matches.length === 0) {
-        // --- ROUND 1: INITIALIZE ---
+    // --- SCENARIO A: FIRST ROUND ---
+    if (!latestMatches || latestMatches.length === 0) {
         
-        // 1. Sync Individual Players as Teams
         if (sportType === 'Individual') {
             showToast("Syncing individual players...", "info");
             await supabaseClient.rpc('prepare_individual_teams', { sport_id_input: intSportId });
         }
-
-        // 2. Auto-Lock Top 64 Teams
         await supabaseClient.rpc('auto_lock_tournament_teams', { sport_id_input: intSportId });
 
-        // 3. Fetch Valid Teams with Categories
-        // The SQL function returns: team_id, team_name, category ('Junior' or 'Senior')
         const { data: validTeams, error } = await supabaseClient.rpc('get_tournament_teams', { sport_id_input: intSportId });
-        
         if (error) { console.error(error); return showToast("DB Error: " + error.message, "error"); }
         if (!validTeams || validTeams.length < 2) return showToast("Need at least 2 VALID TEAMS to start.", "error");
 
-        // Format for pairing
         candidates = validTeams.map(t => ({ 
             id: t.team_id, 
             name: t.team_name,
             category: t.category 
         }));
 
-    } else {
-        // --- NEXT ROUNDS ---
-        if (matches[0].status !== 'Completed') return showToast("Current round matches are still active!", "error");
+    } 
+    // --- SCENARIO B: NEXT ROUNDS (FIXED) ---
+    else {
+        const lastRound = latestMatches[0].round_number;
         
-        round = matches[0].round_number + 1;
-        const { data: winners } = await supabaseClient.from('matches')
+        // Check if previous round is fully complete
+        const { count: pendingCount } = await supabaseClient
+            .from('matches')
+            .select('*', { count: 'exact', head: true })
+            .eq('sport_id', intSportId)
+            .eq('round_number', lastRound)
+            .neq('status', 'Completed');
+
+        if (pendingCount > 0) return showToast(`Round ${lastRound} is not finished yet! (${pendingCount} matches left)`, "error");
+
+        round = lastRound + 1;
+
+        // Fetch Winners from Previous Round
+        const { data: winners, error: winnerError } = await supabaseClient
+            .from('matches')
             .select('winner_id')
             .eq('sport_id', intSportId)
-            .eq('round_number', round - 1)
-            .neq('winner_id', null);
+            .eq('round_number', lastRound)
+            .not('winner_id', 'is', null); // IMPORTANT: Exclude matches with no winner
 
-        if (!winners || winners.length < 2) return showToast("Tournament Completed or Insufficient Winners.", "success");
+        if (winnerError) return showToast("Error fetching winners: " + winnerError.message, "error");
+        if (!winners || winners.length < 2) return showToast("Tournament Completed! (Winner Declared)", "success");
 
         const winnerIds = winners.map(w => w.winner_id);
         
-        // Fetch Team Details + Category for Next Round Logic
-        const { data: teamDetails } = await supabaseClient
+        // Fetch Details for these Winner IDs
+        const { data: teamDetails, error: teamError } = await supabaseClient
             .from('teams')
             .select(`id, name, captain:users!captain_id(class_name)`)
             .in('id', winnerIds);
+            
+        if (teamError) return showToast("Error fetching team details", "error");
 
         candidates = teamDetails.map(t => ({
             id: t.id,
             name: t.name,
-            category: (['FYJC', 'SYJC'].includes(t.captain.class_name)) ? 'Junior' : 'Senior'
+            category: (['FYJC', 'SYJC'].includes(t.captain?.class_name)) ? 'Junior' : 'Senior'
         }));
     }
 
-    // --- PAIRING LOGIC ---
+    // --- PAIRING LOGIC (With Bye Handling) ---
     tempSchedule = [];
     
-    // Determine Match Type (Finals, Semi, etc)
     let matchType = 'Regular';
     if (candidates.length === 2) matchType = 'Final';
     else if (candidates.length <= 4) matchType = 'Semi-Final';
     else if (candidates.length <= 8) matchType = 'Quarter-Final';
 
-    // *** THE MERGE LOGIC ***
-    // If <= 4 teams (Semi-Finals/Finals), MIX everyone (Jr vs Sr allowed)
-    // Else, Separate Jr vs Jr and Sr vs Sr
-    
+    // The Merge Logic (Last 4)
     if (candidates.length <= 4) {
-        // --- OPEN POOL (The Merge) ---
-        candidates.sort(() => Math.random() - 0.5); // Random Mix
+        candidates.sort(() => Math.random() - 0.5); 
         generatePairsFromList(candidates, round, matchType);
     } else {
-        // --- SPLIT POOL ---
+        // Split Logic
         const juniors = candidates.filter(c => c.category === 'Junior').sort(() => Math.random() - 0.5);
         const seniors = candidates.filter(c => c.category === 'Senior').sort(() => Math.random() - 0.5);
         
         generatePairsFromList(juniors, round, matchType);
         generatePairsFromList(seniors, round, matchType);
-        
-        // Handle Leftovers (Rare case where odd numbers in split but even total)
-        // Note: For simplicity in this logic, Byes are handled per pool.
     }
+
+    if(tempSchedule.length === 0) return showToast("Error generating pairs. Not enough teams.", "error");
 
     openSchedulePreviewModal(sportName, round, tempSchedule, intSportId);
 }
 
 function generatePairsFromList(list, round, matchType) {
+    // Handle odd number of teams with a BYE
+    if (list.length % 2 !== 0) {
+        // Pop the last team to give them a Bye
+        const luckyTeam = list.pop(); 
+        tempSchedule.push({
+            t1: luckyTeam,
+            t2: { id: null, name: "BYE (Auto-Advance)" },
+            time: "10:00",
+            location: "N/A",
+            round: round,
+            type: 'Bye Round'
+        });
+    }
+
     for (let i = 0; i < list.length; i += 2) {
-        if (i + 1 < list.length) {
-            tempSchedule.push({
-                t1: list[i],
-                t2: list[i+1],
-                time: "10:00",
-                location: "College Ground", // Default
-                round: round,
-                type: matchType
-            });
-        } else {
-             // Bye logic
-             tempSchedule.push({
-                t1: list[i],
-                t2: { id: null, name: "BYE (Auto-Advance)" },
-                time: "10:00",
-                location: "N/A",
-                round: round,
-                type: 'Bye Round'
-             });
-        }
+        tempSchedule.push({
+            t1: list[i],
+            t2: list[i+1],
+            time: "10:00",
+            location: "College Ground",
+            round: round,
+            type: matchType
+        });
     }
 }
 
@@ -391,7 +399,6 @@ function openSchedulePreviewModal(sportName, round, schedule, sportId) {
     document.getElementById('preview-subtitle').innerText = `Generating Round ${round}`;
     const container = document.getElementById('schedule-preview-list');
     
-    // Venue Options (Fixed)
     const venueOptions = `
         <option value="College Ground">College Ground</option>
         <option value="Badminton Hall">Badminton Hall</option>
