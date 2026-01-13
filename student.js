@@ -32,7 +32,7 @@
     document.addEventListener('DOMContentLoaded', async () => {
         if(window.lucide) lucide.createIcons();
         initTheme();
-        injectToastContainer();
+        injectToastContainer(); // Ensure this runs first to fix console errors
         setupImageUpload(); 
         setupTabSystem();
         setupConfirmModal(); 
@@ -103,6 +103,7 @@
     }
 
     function updateProfileUI() {
+        if (!currentUser) return;
         const avatarUrl = currentUser.avatar_url || DEFAULT_AVATAR;
         
         const headerImg = document.getElementById('header-avatar');
@@ -167,28 +168,10 @@
         const { count: matches } = await supabaseClient.from('registrations')
             .select('*', { count: 'exact', head: true }).eq('user_id', currentUser.id);
 
-        const { count: wins } = await supabaseClient.from('registrations')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', currentUser.id).eq('player_status', 'Won');
-
         const statEl = document.getElementById('stat-matches-played');
         if(statEl) statEl.innerText = matches || 0;
         
-        const dashStats = document.getElementById('dashboard-stats-container');
-        if(dashStats) {
-            dashStats.innerHTML = `
-                <div class="grid grid-cols-2 gap-4 mb-6">
-                    <div class="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm text-center">
-                        <div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Events Joined</div>
-                        <div class="text-2xl font-black text-brand-primary dark:text-indigo-400 mt-1">${matches || 0}</div>
-                    </div>
-                    <div class="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm text-center">
-                        <div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Victories</div>
-                        <div class="text-2xl font-black text-yellow-500 mt-1">${wins || 0}</div>
-                    </div>
-                </div>
-            `;
-        }
+        // Removed logic for 'dashboard-stats-container' as requested to simplify dashboard
     }
 
     window.logout = async function() {
@@ -228,106 +211,22 @@
         }
     }
 
-    // --- 4. DASHBOARD (REALTIME + MAIN DB) ---
+    // --- 4. DASHBOARD (RESULTS ONLY) ---
     async function loadDashboard() {
-        // 1. Live Matches (Realtime DB - High Priority)
-        loadLiveMatches();
+        // Hiding Live/Upcoming sections to focus on Medals
+        const liveContainer = document.getElementById('live-matches-container');
+        const upcomingContainer = document.getElementById('upcoming-matches-list');
         
-        // 2. Upcoming Matches (Main DB - Safe Fallback)
-        loadUpcomingDashboard();
-        
-        // 3. Champions (Realtime DB - 3 Winners)
+        if (liveContainer) liveContainer.classList.add('hidden');
+        if (upcomingContainer) upcomingContainer.innerHTML = ''; 
+
+        // Only Load Champions
         loadLatestChampions();
-    }
-
-    // A. LIVE MATCHES
-    async function loadLiveMatches() {
-        const container = document.getElementById('live-matches-container');
-        const list = document.getElementById('live-matches-list');
-        
-        if(!list) return;
-
-        const { data: matches } = await realtimeClient
-            .from('live_matches')
-            .select('*')
-            .eq('status', 'Live')
-            .order('updated_at', { ascending: false });
-
-        if (container) {
-            if (!matches || matches.length === 0) {
-                container.classList.add('hidden'); 
-                return;
-            }
-            container.classList.remove('hidden');
-        } else if (!matches || matches.length === 0) {
-            list.innerHTML = '';
-            return;
-        }
-        
-        list.innerHTML = matches.map(m => `
-            <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-red-100 dark:border-red-900/30 shadow-lg shadow-red-50/50 relative overflow-hidden mb-4 animate-fade-in">
-                <div class="absolute top-0 right-0 bg-red-600 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl animate-pulse flex items-center gap-1">
-                    <span class="w-1.5 h-1.5 bg-white rounded-full"></span> LIVE
-                </div>
-                <div class="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-2">${m.sport_name}</div>
-                
-                <div class="flex items-center justify-between gap-2">
-                    <div class="text-left w-5/12">
-                        <h3 class="font-black text-lg text-gray-900 dark:text-white leading-tight truncate">${m.team1_name}</h3>
-                        <p class="text-3xl font-black text-gray-900 dark:text-white mt-1">${m.score1 || 0}</p>
-                    </div>
-                    <div class="text-center w-2/12"><div class="text-[10px] font-bold text-gray-300 bg-gray-50 dark:bg-gray-700 rounded-full w-8 h-8 flex items-center justify-center mx-auto">VS</div></div>
-                    <div class="text-right w-5/12">
-                        <h3 class="font-black text-lg text-gray-900 dark:text-white leading-tight truncate">${m.team2_name}</h3>
-                        <p class="text-3xl font-black text-gray-900 dark:text-white mt-1">${m.score2 || 0}</p>
-                    </div>
-                </div>
-                <div class="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 flex justify-between items-center text-xs text-gray-400 font-bold">
-                    <span class="flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3"></i> ${m.location || 'Ground'}</span>
-                    <span>Round ${m.round_number || 1}</span>
-                </div>
-            </div>
-        `).join('');
-        if(window.lucide) lucide.createIcons();
-    }
-
-    // B. UPCOMING (MAIN DB)
-    async function loadUpcomingDashboard() {
-        const list = document.getElementById('upcoming-matches-list');
-        if(!list) return;
-
-        const { data: matches } = await supabaseClient
-            .from('matches')
-            .select('*, sports(name)')
-            .eq('status', 'Scheduled')
-            .order('start_time', { ascending: true })
-            .limit(3);
-
-        if(!matches || matches.length === 0) {
-            list.innerHTML = '<p class="text-xs text-gray-400 italic text-center py-4">No upcoming matches.</p>';
-            return;
-        }
-
-        list.innerHTML = matches.map(m => `
-            <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between mb-2">
-                <div>
-                    <div class="text-[10px] font-bold text-brand-primary uppercase tracking-wide">${m.sports.name}</div>
-                    <div class="font-bold text-gray-900 dark:text-white text-sm mt-0.5">${m.team1_name} vs ${m.team2_name}</div>
-                    <div class="text-xs text-gray-400 mt-1 flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> ${new Date(m.start_time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
-                </div>
-                <div class="bg-gray-50 dark:bg-gray-700 px-3 py-2 rounded-lg text-center">
-                    <div class="text-[10px] font-bold text-gray-400 uppercase">${new Date(m.start_time).toLocaleString('default', { month: 'short' })}</div>
-                    <div class="text-lg font-black text-gray-900 dark:text-white leading-none">${new Date(m.start_time).getDate()}</div>
-                </div>
-            </div>
-        `).join('');
-        if(window.lucide) lucide.createIcons();
     }
 
     // C. CHAMPIONS (REALTIME DB)
     async function loadLatestChampions() {
         let container = document.getElementById('home-champions-list'); 
-        if (!container) container = document.getElementById('champions-list'); 
         if (!container) return;
 
         const { data: matches } = await realtimeClient
@@ -335,8 +234,7 @@
             .select('*')
             .eq('status', 'Completed')
             .not('winners_data', 'is', null) 
-            .order('updated_at', { ascending: false })
-            .limit(5);
+            .order('updated_at', { ascending: false });
 
         if(!matches || matches.length === 0) {
             container.innerHTML = '<p class="text-xs text-gray-400 italic text-center py-4">No results declared yet.</p>';
@@ -345,16 +243,30 @@
 
         container.innerHTML = matches.map(m => {
             const w = m.winners_data || {};
+            
+            // Determine Category (Junior/Senior) from match details
+            let categoryTag = '';
+            const matchInfo = (m.match_type || '') + (m.team1_name || '');
+            
+            if (matchInfo.includes('Junior') || matchInfo.includes('Jr')) {
+                categoryTag = `<span class="ml-2 text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-bold uppercase border border-blue-100">Junior</span>`;
+            } else if (matchInfo.includes('Senior') || matchInfo.includes('Sr')) {
+                categoryTag = `<span class="ml-2 text-[9px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded font-bold uppercase border border-purple-100">Senior</span>`;
+            }
+
             return `
             <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm relative overflow-hidden mb-3">
-                <div class="flex justify-between items-center mb-2 border-b border-gray-50 dark:border-gray-700 pb-2">
-                    <span class="text-xs font-black text-gray-400 uppercase tracking-widest">${m.sport_name}</span>
-                    <span class="text-[9px] bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-2 py-0.5 rounded font-bold">Finished</span>
+                <div class="flex justify-between items-center mb-3 border-b border-gray-100 dark:border-gray-700 pb-2">
+                    <div class="flex items-center">
+                        <span class="text-xs font-black text-gray-900 dark:text-white uppercase tracking-wide">${m.sport_name}</span>
+                        ${categoryTag}
+                    </div>
+                    <span class="text-[9px] text-gray-400 font-medium">${new Date(m.updated_at).toLocaleDateString()}</span>
                 </div>
-                <div class="space-y-1">
-                    ${w.gold ? `<div class="flex items-center gap-2 text-xs font-bold"><span class="text-lg">🥇</span> <span class="text-gray-800 dark:text-gray-200">${w.gold}</span></div>` : ''}
-                    ${w.silver ? `<div class="flex items-center gap-2 text-xs font-bold"><span class="text-lg">🥈</span> <span class="text-gray-600 dark:text-gray-400">${w.silver}</span></div>` : ''}
-                    ${w.bronze ? `<div class="flex items-center gap-2 text-xs font-bold"><span class="text-lg">🥉</span> <span class="text-gray-500 dark:text-gray-500">${w.bronze}</span></div>` : ''}
+                <div class="space-y-2">
+                    ${w.gold ? `<div class="flex items-center gap-3 text-xs"><span class="text-lg">🥇</span> <span class="font-bold text-gray-800 dark:text-gray-200">${w.gold}</span></div>` : ''}
+                    ${w.silver ? `<div class="flex items-center gap-3 text-xs"><span class="text-lg">🥈</span> <span class="font-medium text-gray-600 dark:text-gray-400">${w.silver}</span></div>` : ''}
+                    ${w.bronze ? `<div class="flex items-center gap-3 text-xs"><span class="text-lg">🥉</span> <span class="font-medium text-gray-500 dark:text-gray-500">${w.bronze}</span></div>` : ''}
                 </div>
             </div>
         `}).join('');
@@ -370,17 +282,12 @@
                 const newData = payload.new;
                 if (!newData) return;
 
-                // REFRESH DASHBOARD WIDGETS
-                if (newData.status === 'Live') {
-                    loadLiveMatches();
-                    showToast(`Update: ${newData.sport_name} score changed!`);
-                } else if (newData.status === 'Completed') {
-                    loadLiveMatches();
+                if (newData.status === 'Completed') {
                     loadLatestChampions();
-                    showToast(`Result: ${newData.sport_name} finished!`);
+                    showToast(`🏆 Result: ${newData.sport_name} finished!`);
                 }
-
-                // REFRESH SCHEDULE LIST (To re-sort LIVE events to top)
+                
+                // Refresh Schedule if active
                 const scheduleView = document.getElementById('view-schedule');
                 if (scheduleView && !scheduleView.classList.contains('hidden')) {
                     loadSchedule();
@@ -389,7 +296,7 @@
             .subscribe();
     }
 
-    // --- 6. SCHEDULE MODULE (UPDATED WITH SEARCH/FILTER) ---
+    // --- 6. SCHEDULE MODULE (SEARCH & FILTER ADDED) ---
     window.filterSchedule = function(view) {
         currentScheduleView = view;
         
@@ -410,52 +317,54 @@
 
     async function loadSchedule() {
         const container = document.getElementById('schedule-list');
+        if(!container) return;
+        
         container.innerHTML = '<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary mx-auto"></div>';
 
-        // 1. FETCH ALL DATA
         const { data: matches } = await supabaseClient
             .from('matches')
             .select('*, sports(name, icon, type, is_performance)')
             .order('start_time', { ascending: true });
 
         if (!matches || matches.length === 0) {
-            container.innerHTML = `<p class="text-gray-400 font-medium text-center">No matches found.</p>`;
+            container.innerHTML = `<p class="text-gray-400 font-medium text-center py-10">No matches found.</p>`;
             return;
         }
 
-        // 2. POPULATE SPORT FILTER (If empty)
-        const sportFilterEl = document.getElementById('schedule-sport-filter');
-        if (sportFilterEl && sportFilterEl.children.length <= 1) {
+        // 1. Populate Dropdown dynamically
+        const filterSelect = document.getElementById('schedule-sport-filter');
+        if (filterSelect && filterSelect.children.length <= 1) {
             const uniqueSports = [...new Set(matches.map(m => m.sports.name))].sort();
-            sportFilterEl.innerHTML = `<option value="">All Sports</option>` + 
+            filterSelect.innerHTML = `<option value="">All Sports</option>` + 
                 uniqueSports.map(s => `<option value="${s}">${s}</option>`).join('');
         }
 
-        // 3. APPLY FILTERS (View + Search + Sport)
+        // 2. Get Filter Values
         const searchText = document.getElementById('schedule-search')?.value.toLowerCase() || '';
-        const sportFilter = document.getElementById('schedule-sport-filter')?.value || '';
+        const selectedSport = filterSelect?.value || '';
 
+        // 3. Apply Filters
         let filteredMatches = matches.filter(m => {
-            // A. View Filter
-            const isViewMatch = currentScheduleView === 'upcoming' 
+            // View Check
+            const isCorrectView = currentScheduleView === 'upcoming' 
                 ? ['Upcoming', 'Scheduled', 'Live'].includes(m.status)
                 : m.status === 'Completed';
             
-            if (!isViewMatch) return false;
+            if (!isCorrectView) return false;
 
-            // B. Text Search (Sport, Team 1, Team 2)
-            const searchMatch = !searchText || 
-                m.sports.name.toLowerCase().includes(searchText) || 
-                m.team1_name.toLowerCase().includes(searchText) || 
+            // Search Check
+            const matchSearch = 
+                m.sports.name.toLowerCase().includes(searchText) ||
+                m.team1_name.toLowerCase().includes(searchText) ||
                 m.team2_name.toLowerCase().includes(searchText);
 
-            // C. Sport Category Filter
-            const sportMatch = !sportFilter || m.sports.name === sportFilter;
+            // Sport Check
+            const matchSport = selectedSport === "" || m.sports.name === selectedSport;
 
-            return searchMatch && sportMatch;
+            return matchSearch && matchSport;
         });
 
-        // 4. SORTING
+        // 4. Sort
         if(currentScheduleView === 'upcoming') {
             filteredMatches.sort((a, b) => {
                 if (a.status === 'Live' && b.status !== 'Live') return -1;
@@ -463,13 +372,11 @@
                 return new Date(a.start_time) - new Date(b.start_time);
             });
         } else {
-            // Results: Latest first
             filteredMatches.sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
         }
 
-        // 5. RENDER
         if (filteredMatches.length === 0) {
-            container.innerHTML = `<p class="text-gray-400 font-medium text-center py-4">No matches found matching criteria.</p>`;
+            container.innerHTML = `<p class="text-gray-400 font-medium text-center py-10">No matches found matching criteria.</p>`;
             return;
         }
 
@@ -507,21 +414,30 @@
                     <span class="text-xs text-gray-500 dark:text-gray-400 font-medium uppercase">${m.sports.name}</span>
                 </div>
                 ${isPerf ? 
-                    `<div class="text-center py-2"><h4 class="font-black text-lg text-gray-900 dark:text-white">${m.team1_name}</h4><p class="text-xs text-gray-400 mt-1">Event Details</p></div>`
+                    `<div class="text-center py-2">
+                        <h4 class="font-black text-lg text-gray-900 dark:text-white">${m.team1_name}</h4>
+                        <p class="text-xs text-gray-400 mt-1">Event Details</p>
+                     </div>`
                 : 
                     `<div class="flex items-center justify-between w-full mb-4">
-                        <div class="flex-1 text-left"><h4 class="font-bold text-base text-gray-900 dark:text-white leading-tight">${m.team1_name}</h4></div>
-                        <div class="shrink-0 px-3"><span class="text-[10px] font-bold text-gray-300">VS</span></div>
-                        <div class="flex-1 text-right"><h4 class="font-bold text-base text-gray-900 dark:text-white leading-tight">${m.team2_name}</h4></div>
+                        <div class="flex-1 text-left">
+                            <h4 class="font-bold text-base text-gray-900 dark:text-white leading-tight">${m.team1_name}</h4>
+                        </div>
+                        <div class="shrink-0 px-3">
+                            <span class="text-[10px] font-bold text-gray-300">VS</span>
+                        </div>
+                        <div class="flex-1 text-right">
+                            <h4 class="font-bold text-base text-gray-900 dark:text-white leading-tight">${m.team2_name}</h4>
+                        </div>
                     </div>`
                 }
                 <div class="border-t border-gray-50 dark:border-gray-700 pt-3 flex justify-between items-center">
                     <span class="font-mono text-sm font-bold text-brand-primary dark:text-indigo-400">${footerText}</span>
                     <span class="text-[10px] font-bold text-gray-400 flex items-center gap-1">Details <i data-lucide="chevron-right" class="w-3 h-3"></i></span>
                 </div>
-            </div>
-            `;
+            </div>`;
         }).join('');
+        
         lucide.createIcons();
     }
 
@@ -610,7 +526,7 @@
         `).join('');
     }
 
-    // --- 7. TEAMS MODULE (UPDATED WITH SEARCH) ---
+    // --- 7. TEAMS MODULE (SEARCH ADDED) ---
     window.toggleTeamView = function(view) {
         document.getElementById('team-marketplace').classList.add('hidden');
         document.getElementById('team-locker').classList.add('hidden');
@@ -667,10 +583,10 @@
         }
 
         const validTeams = teams.filter(t => {
-            // 1. Team Name Search
+            // Search Filtering
             if (searchText && !t.name.toLowerCase().includes(searchText)) return false;
 
-            // 2. Gender/Category Validation
+            // Logic Filtering
             const isEsports = ['BGMI', 'FREE FIRE'].includes(t.sports.name);
             if (!isEsports && t.captain?.gender !== currentUser.gender) return false;
             if (!isEsports) {
@@ -688,11 +604,6 @@
         });
 
         const teamsWithCounts = await Promise.all(teamPromises);
-
-        if (teamsWithCounts.length === 0) {
-            container.innerHTML = '<p class="text-center text-gray-400 py-10">No teams found matching criteria.</p>';
-            return;
-        }
 
         container.innerHTML = teamsWithCounts.map(t => {
             const isFull = t.seatsLeft <= 0;
@@ -722,14 +633,6 @@
             </div>
         `}).join('');
     }
-
-    // ... (All other functions from previous version remain unchanged below) ...
-    // Keeping functions like checkGenderEligibility, viewSquadAndJoin, loadTeamLocker, 
-    // leaveTeam, toggleRegisterView, loadSportsDirectory, renderSportsList, filterSports, 
-    // loadRegistrationHistory, loadProfileGames, withdrawRegistration, openSettingsModal, 
-    // updateProfile, getSportIdByName, closeModal, showToast, setupConfirmModal, showConfirmDialog,
-    // openRegistrationModal, confirmRegistration, openCreateTeamModal, createTeam, openManageTeamModal,
-    // handleRequest, promptLockTeam, promptDeleteTeam, removeMember, injectToastContainer.
 
     function checkGenderEligibility(sportName, sportType) {
         if (sportType === 'Team') {
@@ -782,6 +685,7 @@
         }
     }
 
+    // FULL SQUAD VIEW IN LOCKER
     window.loadTeamLocker = async function() {
         const container = document.getElementById('locker-list');
         container.innerHTML = '<p class="text-center text-gray-400 py-10">Loading your teams...</p>';
@@ -1045,18 +949,23 @@
 
     window.showToast = function(msg, type='info') {
         const t = document.getElementById('toast-container');
+        if (!t) return; // Guard clause for missing toast container
+        
         const msgEl = document.getElementById('toast-msg');
         const iconEl = document.getElementById('toast-icon');
         
-        msgEl.innerText = msg;
+        if (msgEl) msgEl.innerText = msg;
         
-        if (type === 'error') {
-            iconEl.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5 text-red-400"></i>';
-        } else {
-            iconEl.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5 text-green-400"></i>';
+        if (iconEl) {
+            if (type === 'error') {
+                iconEl.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5 text-red-400"></i>';
+            } else {
+                iconEl.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5 text-green-400"></i>';
+            }
         }
         
-        lucide.createIcons();
+        if (window.lucide) lucide.createIcons();
+        
         t.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-10');
         
         setTimeout(() => {
@@ -1066,11 +975,13 @@
 
     let confirmCallback = null;
     function setupConfirmModal() {
+        if (!document.getElementById('btn-confirm-yes')) return;
         document.getElementById('btn-confirm-yes').onclick = () => confirmCallback && confirmCallback();
         document.getElementById('btn-confirm-cancel').onclick = () => { window.closeModal('modal-confirm'); confirmCallback = null; };
     }
 
     function showConfirmDialog(title, msg, onConfirm) {
+        if (!document.getElementById('modal-confirm')) return;
         document.getElementById('confirm-title').innerText = title;
         document.getElementById('confirm-msg').innerText = msg;
         confirmCallback = onConfirm;
@@ -1090,15 +1001,19 @@
 
     window.confirmRegistration = async function() {
         const btn = document.querySelector('#modal-register button[onclick="confirmRegistration()"]');
-        const originalText = btn.innerText;
-        btn.disabled = true;
-        btn.innerText = "Registering...";
+        const originalText = btn ? btn.innerText : 'Register';
+        if (btn) {
+            btn.disabled = true;
+            btn.innerText = "Registering...";
+        }
 
         if(!currentUser.mobile) {
             const phone = prompt("⚠️ Mobile number is required. Please enter yours:");
             if(!phone || phone.length < 10) {
-                btn.disabled = false;
-                btn.innerText = originalText;
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerText = originalText;
+                }
                 return showToast("Invalid Mobile Number", "error");
             }
             await supabaseClient.from('users').update({mobile: phone}).eq('id', currentUser.id);
@@ -1111,8 +1026,10 @@
         });
 
         if(error) {
-            btn.disabled = false;
-            btn.innerText = originalText;
+            if (btn) {
+                btn.disabled = false;
+                btn.innerText = originalText;
+            }
             showToast("Error: " + error.message, "error");
         }
         else {
@@ -1123,8 +1040,10 @@
             showToast("Registration Successful!", "success");
             window.closeModal('modal-register');
             
-            btn.disabled = false;
-            btn.innerText = originalText;
+            if (btn) {
+                btn.disabled = false;
+                btn.innerText = originalText;
+            }
 
             renderSportsList(allSportsList);
         }
