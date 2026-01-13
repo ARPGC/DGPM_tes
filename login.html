@@ -6,141 +6,153 @@
     <title>Login | URJA 2026</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
-    
     <script src="https://unpkg.com/lucide@latest"></script>
-
+    
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="config.js"></script>
-    <script src="login.js" defer></script>
 
     <script>
         tailwind.config = {
+            darkMode: 'class', // We control this manually now
             theme: {
                 extend: {
+                    fontFamily: { sans: ['Outfit', 'sans-serif'] },
                     colors: {
-                        brand: {
-                            primary: '#4F46E5', // Indigo 600
-                            dark: '#111827' // Gray 900
-                        }
-                    },
-                    animation: {
-                        'fade-in': 'fadeIn 0.5s ease-out'
-                    },
-                    keyframes: {
-                        fadeIn: {
-                            '0%': { opacity: '0', transform: 'translateY(10px)' },
-                            '100%': { opacity: '1', transform: 'translateY(0)' }
-                        }
+                        brand: { primary: '#6366F1', secondary: '#EC4899', accent: '#F59E0B', success: '#10B981' }
                     }
                 }
             }
         }
     </script>
-    
-    <style>
-        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
-    </style>
+    <link rel="stylesheet" href="style.css">
 </head>
-<body class="bg-gray-50 flex items-center justify-center min-h-screen p-4">
+<body class="bg-gray-100 text-gray-900 antialiased min-h-screen flex items-center justify-center p-4 bg-[url('https://images.unsplash.com/photo-1517649763962-0c623066013b?w=1600&q=80')] bg-cover bg-center">
 
-    <div class="w-full max-w-md bg-white rounded-[2rem] shadow-2xl overflow-hidden animate-fade-in relative">
+    <div class="absolute inset-0 bg-black/50 backdrop-blur-sm z-0"></div>
+
+    <div class="bg-white w-full max-w-md rounded-3xl p-8 shadow-2xl border border-white/20 relative z-10 flex flex-col max-h-[90vh]">
         
-        <div class="bg-brand-primary p-8 text-center relative overflow-hidden">
-            <div class="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-indigo-500 to-purple-600 opacity-90"></div>
-            <div class="absolute -right-10 -top-10 w-40 h-40 bg-white opacity-10 rounded-full blur-2xl"></div>
-            
-            <div class="relative z-10">
-                <h1 class="text-3xl font-black italic tracking-tighter text-white">URJA<span class="text-indigo-200">2026</span></h1>
-                <p class="text-indigo-100 text-xs font-medium mt-1 uppercase tracking-widest">Sports Event Portal</p>
-            </div>
+        <div id="auth-loading" class="hidden absolute inset-0 bg-white/90 z-20 flex flex-col items-center justify-center rounded-3xl">
+            <div class="animate-spin rounded-full h-10 w-10 border-t-2 border-brand-primary mb-2"></div>
+            <p class="text-sm font-bold animate-pulse text-brand-primary">Processing...</p>
         </div>
 
-        <div class="p-8">
-            
-            <div class="flex bg-gray-100 p-1 rounded-xl mb-8">
-                <button onclick="toggleForm('login')" id="tab-login" class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all bg-white shadow text-brand-primary">Sign In</button>
-                <button onclick="toggleForm('signup')" id="tab-signup" class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all text-gray-500 hover:text-gray-700">Sign Up</button>
-            </div>
+        <div class="text-center mb-6">
+            <h1 class="text-4xl font-black italic tracking-tighter text-gray-900">URJA <span class="text-brand-primary">2026</span></h1>
+            <p class="text-xs font-bold text-gray-500 uppercase tracking-widest mt-1">Annual Sports Meet</p>
+        </div>
 
-            <form id="form-login" onsubmit="handleLogin(event)" class="space-y-4">
+        <div id="view-login" class="auth-view space-y-4 overflow-y-auto custom-scrollbar">
+            <h3 class="text-lg font-bold border-l-4 border-brand-primary pl-3 text-gray-800">Student Login</h3>
+            <form onsubmit="handleLogin(event)" class="space-y-4">
                 <div>
-                    <label class="text-xs font-bold text-gray-500 uppercase ml-1">Email</label>
-                    <input type="email" id="login-email" required class="w-full mt-1 p-3.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:border-brand-primary focus:ring-4 focus:ring-indigo-50 outline-none transition-all" placeholder="student@college.edu">
+                    <label class="text-xs font-bold text-gray-500 ml-1 mb-1 block">Email</label>
+                    <input type="email" id="login-email" placeholder="Enter your email" required class="input-field w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 outline-none focus:border-brand-primary transition-all">
                 </div>
-                <div>
-                    <label class="text-xs font-bold text-gray-500 uppercase ml-1">Password</label>
-                    <input type="password" id="login-pass" required class="w-full mt-1 p-3.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:border-brand-primary focus:ring-4 focus:ring-indigo-50 outline-none transition-all" placeholder="••••••••">
+                <div class="relative">
+                    <label class="text-xs font-bold text-gray-500 ml-1 mb-1 block">Password</label>
+                    <input type="password" id="login-pass" placeholder="Enter your password" required class="input-field w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 outline-none focus:border-brand-primary transition-all">
+                    <button type="button" onclick="togglePass('login-pass')" class="absolute right-3 top-8 text-gray-400 hover:text-brand-primary transition"><i data-lucide="eye" class="w-4 h-4"></i></button>
                 </div>
                 
-                <button type="submit" id="btn-login" class="w-full py-3.5 bg-brand-primary text-white font-bold rounded-xl shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all mt-4">
-                    Sign In
-                </button>
-                <p class="text-center text-xs text-gray-400 mt-4">Forgot Password? Contact Admin.</p>
-            </form>
+                <div class="flex justify-end">
+                    <button type="button" onclick="switchAuthView('forgot')" class="text-xs text-brand-primary font-bold hover:underline">Forgot Password?</button>
+                </div>
 
-            <form id="form-signup" onsubmit="handleSignup(event)" class="space-y-3 hidden">
+                <button type="submit" class="w-full py-3.5 bg-gradient-to-r from-brand-primary to-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-brand-primary/30 active:scale-95 transition-transform transform hover:-translate-y-0.5">Login</button>
+            </form>
+            
+            <div class="pt-4 border-t border-gray-100 text-center mt-2">
+                <div class="bg-gray-50 rounded-xl p-3 border border-gray-100">
+                    <p class="text-xs text-gray-500 font-medium">New to URJA?</p>
+                    <button onclick="switchAuthView('signup')" class="text-sm font-bold text-brand-primary hover:text-indigo-700 hover:underline mt-1">Create Student Account</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-signup" class="auth-view hidden space-y-3 overflow-y-auto custom-scrollbar">
+            <h3 class="text-lg font-bold border-l-4 border-brand-secondary pl-3 text-gray-800">New Registration</h3>
+            <p class="text-xs text-gray-500 mb-2">Please fill in your correct details for the ID Card.</p>
+            
+            <form onsubmit="handleSignup(event)" class="space-y-3">
                 <div class="grid grid-cols-2 gap-3">
                     <div>
-                        <label class="text-[10px] font-bold text-gray-500 uppercase ml-1">First Name</label>
-                        <input type="text" id="reg-fname" required class="w-full mt-1 p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:border-brand-primary">
+                        <input type="text" id="reg-fname" placeholder="First Name" required class="input-field w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 outline-none focus:border-brand-primary transition-all">
                     </div>
                     <div>
-                        <label class="text-[10px] font-bold text-gray-500 uppercase ml-1">Last Name</label>
-                        <input type="text" id="reg-lname" required class="w-full mt-1 p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:border-brand-primary">
+                        <input type="text" id="reg-lname" placeholder="Last Name" required class="input-field w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 outline-none focus:border-brand-primary transition-all">
                     </div>
                 </div>
-
-                <div>
-                    <label class="text-[10px] font-bold text-gray-500 uppercase ml-1">Email</label>
-                    <input type="email" id="reg-email" required class="w-full mt-1 p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:border-brand-primary">
-                </div>
-
+                
                 <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="text-[10px] font-bold text-gray-500 uppercase ml-1">Gender</label>
-                        <select id="reg-gender" class="w-full mt-1 p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:border-brand-primary">
-                            <option value="Male">Male</option>
-                            <option value="Female">Female</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="text-[10px] font-bold text-gray-500 uppercase ml-1">Class</label>
-                        <select id="reg-class" class="w-full mt-1 p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:border-brand-primary">
-                            <option value="FYJC">FYJC</option>
-                            <option value="SYJC">SYJC</option>
-                            <option value="FY">FY</option>
-                            <option value="SY">SY</option>
-                            <option value="TY">TY</option>
-                            <option value="FYPG">FYPG</option>
-                            <option value="SYPG">SYPG</option>
-                        </select>
-                    </div>
+                    <input type="text" id="reg-sid" placeholder="Student ID" required class="input-field w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 outline-none focus:border-brand-primary transition-all">
+                    <input type="text" id="reg-course" placeholder="Course (e.g. BMS)" required class="input-field w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 outline-none focus:border-brand-primary transition-all">
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <select id="reg-class" required class="input-field w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 outline-none focus:border-brand-primary transition-all cursor-pointer">
+                        <option value="" disabled selected>Select Class</option>
+                         <option value="FY">FYJC</option>
+                         <option value="FY">SYJC</option>
+                        <option value="FY">FY</option>
+                        <option value="SY">SY</option>
+                        <option value="TY">TY</option>
+                        <option value="FY">FYPG</option>
+                         <option value="FY">SYPG</option>
+                    </select>
+                    <select id="reg-gender" required class="input-field w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 outline-none focus:border-brand-primary transition-all cursor-pointer">
+                        <option value="" disabled selected>Gender</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Other">Other</option>
+                    </select>
                 </div>
 
-                <div>
-                    <label class="text-[10px] font-bold text-gray-500 uppercase ml-1">Student ID / Roll No</label>
-                    <input type="text" id="reg-sid" required class="w-full mt-1 p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:border-brand-primary">
-                </div>
+                <input type="tel" id="reg-mobile" placeholder="Mobile Number (10 digits)" required class="input-field w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 outline-none focus:border-brand-primary transition-all" pattern="[0-9]{10}">
 
-                <div>
-                    <label class="text-[10px] font-bold text-gray-500 uppercase ml-1">Create Password</label>
-                    <input type="password" id="reg-pass" required class="w-full mt-1 p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:border-brand-primary">
+                <input type="email" id="reg-email" placeholder="Email Address" required class="input-field w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 outline-none focus:border-brand-primary transition-all">
+                
+                <div class="relative">
+                    <input type="password" id="reg-pass" placeholder="Create Password (Min 6 chars)" required class="input-field w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 outline-none focus:border-brand-primary transition-all" minlength="6">
+                    <button type="button" onclick="togglePass('reg-pass')" class="absolute right-3 top-3 text-gray-400 hover:text-brand-primary transition"><i data-lucide="eye" class="w-4 h-4"></i></button>
                 </div>
+                
+                <button type="submit" class="w-full py-3.5 bg-gradient-to-r from-brand-secondary to-pink-700 text-white font-bold rounded-xl shadow-lg shadow-brand-secondary/30 active:scale-95 transition-transform mt-2 transform hover:-translate-y-0.5">Sign Up</button>
+            </form>
+            
+            <div class="text-center mt-2">
+                <button onclick="switchAuthView('login')" class="text-xs font-bold text-gray-500 hover:text-brand-primary">Back to Login</button>
+            </div>
+        </div>
 
-                <button type="submit" id="btn-signup" class="w-full py-3.5 bg-black text-white font-bold rounded-xl shadow-lg hover:opacity-90 active:scale-95 transition-all mt-4">
-                    Create Account
-                </button>
+        <div id="view-forgot" class="auth-view hidden space-y-4">
+            <h3 class="text-lg font-bold border-l-4 border-gray-500 pl-3 text-gray-800">Reset Password</h3>
+            <p class="text-sm text-gray-500">Enter your registered email address. We'll send you a secure link to reset your password.</p>
+            
+            <form onsubmit="handleForgotPass(event)" class="space-y-4">
+                <input type="email" id="forgot-email" placeholder="Email Address" required class="input-field w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 outline-none focus:border-brand-primary transition-all">
+                <button type="submit" class="w-full py-3.5 bg-gray-800 text-white font-bold rounded-xl shadow-lg active:scale-95 transition-transform transform hover:-translate-y-0.5">Send Reset Link</button>
             </form>
 
+            <div class="text-center mt-4">
+                <button onclick="switchAuthView('login')" class="text-xs font-bold text-gray-500 hover:text-brand-primary flex items-center justify-center gap-1 mx-auto">
+                    <i data-lucide="arrow-left" class="w-3 h-3"></i> Back to Login
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <div id="toast-container" class="fixed top-0 left-1/2 transform -translate-x-1/2 z-[100] w-full max-w-sm p-4 opacity-0 pointer-events-none transition-all duration-300">
+        <div id="toast-content" class="px-6 py-4 rounded-2xl shadow-2xl font-bold text-sm flex items-center gap-3 backdrop-blur-md border border-white/10">
+            <span id="toast-icon"></span>
+            <span id="toast-text"></span>
         </div>
     </div>
 
-    <div id="toast-container" class="fixed bottom-10 left-1/2 transform -translate-x-1/2 z-50 transition-all duration-300 opacity-0 pointer-events-none translate-y-10 w-11/12 max-w-sm">
-        <div id="toast-content" class="bg-gray-900 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3">
-            <div id="toast-icon"></div>
-            <p id="toast-msg" class="text-sm font-bold"></p>
-        </div>
-    </div>
-
+    <script src="auth.js"></script>
+    <script>lucide.createIcons();</script>
 </body>
 </html>
