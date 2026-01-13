@@ -2,21 +2,17 @@
 // URJA 2026 - VOLUNTEER CONTROLLER
 // ==========================================
 
-(function() { // <--- IIFE WRAPPER
+(function() {
 
-    // --- CONFIGURATION CHECKS ---
+    // --- CONFIGURATION ---
     if (typeof CONFIG === 'undefined' || typeof CONFIG_REALTIME === 'undefined') {
-        console.error("CRITICAL: Config missing. Ensure config.js and config2.js are loaded.");
+        console.error("CRITICAL: Config missing.");
         return;
     }
 
-    // 1. MAIN PROJECT
     const supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
-
-    // 2. REALTIME PROJECT
     const realtimeClient = window.supabase.createClient(CONFIG_REALTIME.url, CONFIG_REALTIME.serviceKey);
 
-    // --- STATE ---
     let currentUser = null;
     let currentSportId = null;
     let allMatchesCache = []; 
@@ -27,81 +23,55 @@
         if(window.lucide) lucide.createIcons();
         initTheme();
         injectToastContainer();
-        setupConfirmModal();
+        setupConfirmModal(); 
         await checkAuth();
     });
 
-    // --- 1. THEME LOGIC ---
+    // --- THEME ---
     function initTheme() {
-        const savedTheme = localStorage.getItem('urja-theme');
-        if (savedTheme === 'dark') {
+        if (localStorage.getItem('urja-theme') === 'dark') {
             document.documentElement.classList.add('dark');
-            updateThemeIcon(true);
-        } else {
-            document.documentElement.classList.remove('dark');
-            localStorage.setItem('urja-theme', 'light'); 
-            updateThemeIcon(false);
         }
     }
-
     window.toggleTheme = function() {
-        const html = document.documentElement;
-        const isDark = html.classList.toggle('dark');
-        localStorage.setItem('urja-theme', isDark ? 'dark' : 'light');
-        updateThemeIcon(isDark);
+        document.documentElement.classList.toggle('dark');
+        localStorage.setItem('urja-theme', document.documentElement.classList.contains('dark') ? 'dark' : 'light');
     }
 
-    function updateThemeIcon(isDark) {
-        const btn = document.getElementById('btn-theme-toggle');
-        if(btn) {
-            btn.innerHTML = isDark 
-                ? '<i data-lucide="sun" class="w-5 h-5 text-yellow-400"></i>' 
-                : '<i data-lucide="moon" class="w-5 h-5 text-gray-600 dark:text-gray-300"></i>';
-            if(window.lucide) lucide.createIcons();
-        }
-    }
-
-    // --- 2. AUTHENTICATION ---
+    // --- AUTH ---
     async function checkAuth() {
         const { data: { session } } = await supabaseClient.auth.getSession();
         if (!session) { window.location.href = 'login.html'; return; }
 
         const { data: user } = await supabaseClient
             .from('users')
-            .select('*, assigned_sport:sports!assigned_sport_id(id, name, type, unit)') // Fetch Unit too
+            .select('*, assigned_sport:sports!assigned_sport_id(id, name, type, unit)')
             .eq('id', session.user.id)
             .single();
 
         if (!user || user.role !== 'volunteer') {
-            showToast("Access Denied", "error");
-            setTimeout(() => window.location.href = 'login.html', 2000);
+            alert("Access Denied");
+            window.location.href = 'login.html';
             return;
         }
 
         currentUser = user;
-        const sportNameEl = document.getElementById('assigned-sport-name');
-        const welcomeEl = document.getElementById('welcome-msg');
-
-        if (user.assigned_sport) {
-            currentSportId = user.assigned_sport.id;
-            if (sportNameEl) sportNameEl.innerText = user.assigned_sport.name;
-            if (welcomeEl) welcomeEl.innerText = `Welcome, ${user.first_name}`;
-            loadAssignedMatches();
-        } else {
-            if (sportNameEl) sportNameEl.innerText = "No Sport Assigned";
-            showToast("Ask Admin to assign a sport.", "error");
+        currentSportId = user.assigned_sport?.id;
+        
+        if (document.getElementById('assigned-sport-name')) {
+            document.getElementById('assigned-sport-name').innerText = user.assigned_sport?.name || "No Sport";
+            document.getElementById('welcome-msg').innerText = `Welcome, ${user.first_name}`;
         }
+        
+        if(currentSportId) loadAssignedMatches();
     }
 
-    window.logout = function() {
-        supabaseClient.auth.signOut();
-        window.location.href = 'login.html';
-    }
+    window.logout = () => { supabaseClient.auth.signOut(); window.location.href = 'login.html'; };
 
-    // --- 3. REALTIME SYNC ---
+    // --- REALTIME SYNC ---
     async function syncToRealtime(matchId) {
-        const { data: match, error } = await supabaseClient.from('matches').select('*, sports(name)').eq('id', matchId).single();
-        if(error || !match) return;
+        const { data: match } = await supabaseClient.from('matches').select('*, sports(name)').eq('id', matchId).single();
+        if(!match) return;
 
         const payload = {
             id: match.id,
@@ -115,32 +85,29 @@
             round_number: match.round_number,
             match_type: match.match_type,
             winner_text: match.winner_text,
+            performance_data: match.performance_data, // NOW SYNCING PERFORMANCE DATA
             updated_at: new Date()
         };
 
         await realtimeClient.from('live_matches').upsert(payload);
     }
 
-    // --- 4. MATCH MANAGEMENT ---
+    // --- MATCH LIST ---
     window.loadAssignedMatches = async function() {
         const container = document.getElementById('matches-container');
-        if (container) container.innerHTML = '<div class="text-center py-10"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary mx-auto"></div></div>';
+        if(container) container.innerHTML = '<div class="text-center py-10"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary mx-auto"></div></div>';
 
-        const { data: matches, error } = await supabaseClient
+        const { data: matches } = await supabaseClient
             .from('matches')
             .select('*, sports(unit)')
             .eq('sport_id', currentSportId)
             .neq('status', 'Completed') 
             .order('start_time', { ascending: true });
 
-        if (error) return showToast(error.message, "error");
-
         allMatchesCache = matches || [];
-        allMatchesCache.sort((a, b) => {
-            if (a.status === 'Live' && b.status !== 'Live') return -1;
-            if (a.status !== 'Live' && b.status === 'Live') return 1;
-            return 0;
-        });
+        
+        // Sort: Live first
+        allMatchesCache.sort((a, b) => (a.status === 'Live' ? -1 : 1));
 
         renderMatches(allMatchesCache);
         
@@ -150,112 +117,81 @@
         }
     }
 
-    window.filterMatches = function() {
-        const query = document.getElementById('match-search').value.toLowerCase();
-        const filtered = allMatchesCache.filter(m => 
-            (m.team1_name && m.team1_name.toLowerCase().includes(query)) ||
-            (m.team2_name && m.team2_name.toLowerCase().includes(query))
-        );
-        renderMatches(filtered);
-    }
-
     function renderMatches(matches) {
         const container = document.getElementById('matches-container');
-        if (!container) return;
-
+        if(!container) return;
         if (!matches || matches.length === 0) {
-            container.innerHTML = `
-                <div class="text-center p-8 bg-white dark:bg-gray-800 rounded-2xl border border-dashed border-gray-300 dark:border-gray-700">
-                    <p class="text-gray-400 dark:text-gray-500 font-bold text-sm">No active matches.</p>
-                </div>`;
+            container.innerHTML = '<p class="text-center text-gray-400 py-8">No active matches.</p>';
             return;
         }
 
         container.innerHTML = matches.map(m => {
             const isLive = m.status === 'Live';
-            const isPerf = m.performance_data && Array.isArray(m.performance_data) && m.performance_data.length > 0;
-            const cardType = isPerf ? 'Performance Event' : 'Match';
+            return `
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-3xl border ${isLive ? 'border-green-500 shadow-lg' : 'border-gray-100 dark:border-gray-700 shadow-sm'} relative overflow-hidden mb-3">
+                ${isLive ? '<div class="absolute top-0 left-0 w-full bg-green-500 text-white text-[10px] font-bold text-center py-1 uppercase tracking-widest animate-pulse">Live Now</div>' : ''}
+                
+                <div class="flex justify-between items-center mt-3">
+                    <span class="text-[10px] font-bold bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded text-gray-500 dark:text-gray-400 uppercase">Round ${m.round_number}</span>
+                    <span class="text-xs font-bold text-gray-400">${new Date(m.start_time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                </div>
 
-            if (isLive) {
-                return `
-                <div onclick="window.openMatchPanel('${m.id}')" class="bg-white dark:bg-gray-800 p-5 rounded-3xl border border-green-500 shadow-lg relative overflow-hidden cursor-pointer active:scale-[0.98] transition-all">
-                    <div class="absolute top-0 left-0 w-full bg-green-500 text-white text-[10px] font-bold text-center py-1 uppercase tracking-widest animate-pulse">Live Now</div>
-                    <div class="mt-4 text-center">
-                        <h4 class="font-black text-lg text-gray-900 dark:text-white">${m.team1_name}</h4>
-                        <p class="text-xs text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wide mt-1">${cardType}</p>
-                    </div>
-                    <div class="mt-4 text-center">
-                        <span class="inline-flex items-center gap-1 text-[10px] font-bold text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/30 px-3 py-1.5 rounded-full border border-green-100 dark:border-green-800">
-                            Tap to Enter Scores <i data-lucide="arrow-right" class="w-3 h-3"></i>
-                        </span>
-                    </div>
-                </div>`;
-            } else {
-                return `
-                <div class="bg-white dark:bg-gray-800 p-5 rounded-3xl border border-gray-100 dark:border-gray-700 shadow-sm relative transition-all">
-                    <div class="flex justify-between items-center mb-3">
-                        <span class="bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wide">Round ${m.round_number}</span>
-                        <span class="text-xs font-bold text-gray-400">${new Date(m.start_time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
-                    </div>
-                    <h4 class="font-bold text-base text-gray-900 dark:text-white text-center mb-4">${m.team1_name}</h4>
-                    <button onclick="window.startMatch('${m.id}')" class="w-full py-3 bg-black dark:bg-white text-white dark:text-black font-bold rounded-xl shadow-lg active:scale-95 transition-all text-xs">Start ${isPerf ? 'Event' : 'Match'}</button>
-                </div>`;
-            }
+                <div class="text-center my-4">
+                    <h4 class="font-black text-lg text-gray-900 dark:text-white leading-tight">${m.team1_name}</h4>
+                    ${!m.performance_data ? `<div class="text-xs text-gray-400 font-bold my-1">VS</div><h4 class="font-black text-lg text-gray-900 dark:text-white leading-tight">${m.team2_name}</h4>` : ''}
+                </div>
+
+                ${isLive 
+                    ? `<button onclick="window.openMatchPanel('${m.id}')" class="w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow-lg active:scale-95 transition-all text-xs">Enter Scores</button>`
+                    : `<button onclick="window.startMatch('${m.id}')" class="w-full py-3 bg-black dark:bg-white text-white dark:text-black font-bold rounded-xl shadow-lg active:scale-95 transition-all text-xs">Start Match</button>`
+                }
+            </div>`;
         }).join('');
-        if(window.lucide) lucide.createIcons();
     }
 
-    // --- 5. MATCH PANEL LOGIC (SPLIT VIEW) ---
-
+    // --- MATCH PANEL ---
     window.openMatchPanel = function(matchId) {
-        const match = allMatchesCache.find(m => m.id === matchId);
-        if(!match) return;
         currentLiveMatchId = matchId;
-        const content = document.getElementById('live-match-content');
-        
-        if (content) {
-            content.innerHTML = generateMatchHTML(match);
-            document.getElementById('modal-live-match').classList.remove('hidden');
-            if(window.lucide) lucide.createIcons();
-        }
+        const match = allMatchesCache.find(m => m.id === matchId);
+        document.getElementById('modal-live-match').classList.remove('hidden');
+        if(match) updateLivePanelUI(match);
+    }
+
+    window.closeMatchPanel = function() {
+        document.getElementById('modal-live-match').classList.add('hidden');
+        currentLiveMatchId = null;
+        loadAssignedMatches();
     }
 
     function updateLivePanelUI(match) {
         const content = document.getElementById('live-match-content');
-        if (content && !document.getElementById('modal-live-match').classList.contains('hidden')) {
-            // Only update standard matches automatically. 
-            // Performance matches have input fields, auto-updating might overwrite user typing.
-            if (!match.performance_data) {
-                content.innerHTML = generateMatchHTML(match);
-                if(window.lucide) lucide.createIcons();
-            }
-        }
-    }
+        if(!content) return;
 
-    function generateMatchHTML(match) {
-        // CHECK IF PERFORMANCE EVENT (RACE/THROW)
-        if (match.performance_data && Array.isArray(match.performance_data) && match.performance_data.length > 0) {
-            return generatePerformanceHTML(match);
+        // CHECK TYPE
+        if (match.performance_data && Array.isArray(match.performance_data)) {
+            content.innerHTML = generatePerformanceHTML(match);
         } else {
-            return generateStandardHTML(match);
+            content.innerHTML = generateStandardHTML(match);
         }
+        lucide.createIcons();
     }
 
-    // --- A. PERFORMANCE EVENT UI ---
+    // --- PERFORMANCE UI (UPDATED) ---
     function generatePerformanceHTML(match) {
         const unit = match.sports?.unit || 'Result';
-        const rows = match.performance_data.map((p, index) => `
-            <div class="flex items-center justify-between bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm mb-2">
-                <div class="flex items-center gap-3">
-                    <div class="w-8 h-8 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center text-xs font-bold text-gray-500 dark:text-gray-400">${index + 1}</div>
-                    <div class="flex flex-col">
-                        <span class="text-sm font-bold text-gray-900 dark:text-white">${p.name}</span>
-                        <span class="text-[10px] text-gray-400 uppercase tracking-wide">ID: ${p.id.substring(0, 6)}</span>
-                    </div>
+        
+        const listHtml = match.performance_data.map((p, idx) => `
+            <div class="flex items-center justify-between bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm mb-2">
+                <div class="flex items-center gap-3 overflow-hidden">
+                    <div class="w-8 h-8 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center text-xs font-bold text-gray-500 dark:text-gray-400 shrink-0">${idx + 1}</div>
+                    <span class="text-sm font-bold text-gray-900 dark:text-white truncate">${p.name.split('(')[0]}</span>
                 </div>
                 <div class="flex items-center gap-2">
-                    <input type="text" id="perf-input-${index}" value="${p.result || ''}" placeholder="${unit}" 
-                        class="w-20 p-2 text-right bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg font-bold text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-primary">
+                    <input type="text" id="perf-input-${idx}" value="${p.result || ''}" placeholder="${unit}" 
+                        class="w-20 p-2 text-center bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg font-bold text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-primary">
+                    <button onclick="window.saveSingleResult('${match.id}', ${idx})" class="p-2 bg-brand-primary text-white rounded-lg shadow-md active:scale-90 transition-transform">
+                        <i data-lucide="save" class="w-4 h-4"></i>
+                    </button>
                 </div>
             </div>
         `).join('');
@@ -264,276 +200,208 @@
             <div class="max-w-md mx-auto pb-10">
                 <div class="text-center mb-6">
                     <h3 class="text-xl font-black text-gray-900 dark:text-white">${match.team1_name}</h3>
-                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Enter results (${unit}) for all participants</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Enter ${unit} & Click Save Button</p>
                 </div>
-                
-                <div class="space-y-2 mb-6 max-h-[60vh] overflow-y-auto no-scrollbar">
-                    ${rows}
-                </div>
-
-                <div class="flex gap-3">
-                    <button onclick="window.savePerformanceResults('${match.id}')" class="flex-1 py-3 bg-brand-primary text-white font-bold rounded-xl shadow-lg active:scale-95 transition-all">Save All Results</button>
-                    <button onclick="window.endPerformanceMatch('${match.id}')" class="px-4 py-3 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 font-bold rounded-xl border border-red-100 dark:border-red-800">End Event</button>
-                </div>
-            </div>
-        `;
+                <div class="mb-6">${listHtml}</div>
+                <button onclick="window.endPerformanceMatch('${match.id}')" class="w-full py-4 bg-red-500 text-white font-bold rounded-2xl shadow-lg active:scale-95">End Event</button>
+            </div>`;
     }
 
-    // --- B. STANDARD MATCH UI (SCOREBOARD) ---
+    // --- STANDARD UI (UPDATED BUTTONS) ---
     function generateStandardHTML(match) {
         return `
-            <div class="flex flex-col gap-6 mb-8 w-full max-w-sm mx-auto">
-                <div class="bg-white dark:bg-gray-800 p-5 rounded-3xl shadow-lg border border-indigo-50 dark:border-gray-700 flex flex-col items-center w-full">
-                    <h4 class="font-bold text-lg text-center leading-tight w-full mb-3 text-gray-900 dark:text-white truncate px-2">${match.team1_name}</h4>
-                    <span class="text-6xl font-black text-brand-primary dark:text-indigo-400 tracking-tighter mb-5">${match.score1 || 0}</span>
-                    <div class="flex gap-3 w-full px-2">
-                        <button onclick="window.updateScore('${match.id}', 'score1', -1, ${match.score1})" class="w-12 h-12 flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-full text-gray-500 dark:text-gray-300 font-bold text-2xl active:scale-90 transition-transform shadow-sm">-</button>
-                        <button onclick="window.updateScore('${match.id}', 'score1', 1, ${match.score1})" class="w-12 h-12 flex items-center justify-center bg-brand-primary text-white rounded-full font-bold text-2xl shadow-lg active:scale-90 transition-transform">+</button>
-                    </div>
-                </div>
-
-                <div class="relative flex items-center justify-center py-2">
-                    <span class="bg-white dark:bg-gray-800 text-gray-400 font-black text-xs px-4 py-1.5 rounded-full border border-gray-200 dark:border-gray-700">VS</span>
-                </div>
-
-                <div class="bg-white dark:bg-gray-800 p-5 rounded-3xl shadow-lg border border-pink-50 dark:border-gray-700 flex flex-col items-center w-full">
-                    <h4 class="font-bold text-lg text-center leading-tight w-full mb-3 text-gray-900 dark:text-white truncate px-2">${match.team2_name}</h4>
-                    <span class="text-6xl font-black text-pink-600 dark:text-pink-400 tracking-tighter mb-5">${match.score2 || 0}</span>
-                    <div class="flex gap-3 w-full px-2">
-                        <button onclick="window.updateScore('${match.id}', 'score2', -1, ${match.score2})" class="w-12 h-12 flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-full text-gray-500 dark:text-gray-300 font-bold text-2xl active:scale-90 transition-transform shadow-sm">-</button>
-                        <button onclick="window.updateScore('${match.id}', 'score2', 1, ${match.score2})" class="w-12 h-12 flex items-center justify-center bg-pink-600 text-white rounded-full font-bold text-2xl shadow-lg active:scale-90 transition-transform">+</button>
-                    </div>
-                </div>
+            <div class="flex flex-col gap-6 mb-8 w-full max-w-sm mx-auto pt-4">
+                ${renderTeamControl(match, 1)}
+                <div class="flex items-center justify-center"><span class="bg-gray-100 dark:bg-gray-800 text-gray-400 px-3 py-1 rounded-full text-xs font-bold">VS</span></div>
+                ${renderTeamControl(match, 2)}
             </div>
 
-            <div class="space-y-6 w-full max-w-sm mx-auto pb-10">
-                <button onclick="window.declareWalkover('${match.id}')" class="w-full py-4 border-2 border-red-50 dark:border-red-900/30 bg-white dark:bg-gray-800 text-red-500 dark:text-red-400 font-bold rounded-2xl text-xs uppercase tracking-wide hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center justify-center gap-2">
-                    <i data-lucide="user-x" class="w-4 h-4"></i> Declare Walkover (Absent)
+            <div class="space-y-4 w-full max-w-sm mx-auto pb-10">
+                <button onclick="window.promptWalkover('${match.id}', '${match.team1_name}', '${match.team2_name}')" class="w-full py-4 border-2 border-dashed border-gray-300 dark:border-gray-700 text-gray-400 font-bold rounded-2xl text-xs uppercase hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                    Declare Walkover
                 </button>
-
-                <div class="p-6 bg-gray-900 dark:bg-white rounded-[2rem] shadow-2xl relative overflow-hidden">
-                    <label class="text-[10px] font-bold text-gray-400 uppercase mb-4 block tracking-wide ml-1">Finish Match</label>
-                    <select id="winner-select-${match.id}" onchange="window.enableEndBtn('${match.id}')" class="w-full p-4 bg-gray-800 dark:bg-gray-100 text-white dark:text-gray-900 border border-gray-700 dark:border-gray-200 rounded-2xl text-base font-bold outline-none mb-5 appearance-none cursor-pointer">
-                        <option value="" class="text-gray-500">Select Official Winner...</option>
-                        <option value="${match.team1_id}">${match.team1_name}</option>
-                        <option value="${match.team2_id}">${match.team2_name}</option>
-                    </select>
-                    <button id="btn-end-${match.id}" onclick="window.endMatch('${match.id}')" disabled class="w-full py-4 bg-gray-700 dark:bg-gray-300 text-gray-500 font-bold rounded-2xl cursor-not-allowed transition-all flex items-center justify-center gap-2">
-                        <i data-lucide="trophy" class="w-5 h-5"></i> End Match & Save
+                
+                <div class="bg-gray-900 dark:bg-white p-1 rounded-2xl">
+                    <button onclick="window.endMatch('${match.id}')" class="w-full py-4 bg-gray-800 dark:bg-gray-100 text-white dark:text-gray-900 font-bold rounded-xl active:scale-95 transition-all">
+                        Finish Match
                     </button>
                 </div>
-            </div>
-        `;
+            </div>`;
     }
 
-    // --- ACTIONS: PERFORMANCE ---
-    window.savePerformanceResults = async function(matchId) {
+    function renderTeamControl(match, teamNum) {
+        const name = match[`team${teamNum}_name`];
+        const score = match[`score${teamNum}`] || 0;
+        const color = teamNum === 1 ? 'brand-primary' : 'pink-600';
+        
+        return `
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-3xl shadow-lg border border-gray-100 dark:border-gray-700 flex flex-col items-center">
+            <h4 class="font-black text-xl text-center text-gray-900 dark:text-white leading-tight mb-4 line-clamp-1">${name}</h4>
+            <span class="text-6xl font-black text-${color} tracking-tighter mb-6">${score}</span>
+            <div class="flex gap-4">
+                <button onclick="window.updateScore('${match.id}', 'score${teamNum}', -1, ${score})" class="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-gray-700 text-gray-400 text-3xl font-bold flex items-center justify-center active:scale-90 transition-transform hover:bg-gray-200 dark:hover:bg-gray-600">-</button>
+                <button onclick="window.updateScore('${match.id}', 'score${teamNum}', 1, ${score})" class="w-16 h-16 rounded-2xl bg-${color} text-white text-3xl font-bold flex items-center justify-center shadow-lg shadow-${color}/30 active:scale-90 transition-transform">+</button>
+            </div>
+        </div>`;
+    }
+
+    // --- ACTIONS ---
+
+    window.saveSingleResult = async function(matchId, idx) {
+        const input = document.getElementById(`perf-input-${idx}`);
+        if(!input) return;
+        
         const match = allMatchesCache.find(m => m.id === matchId);
-        if(!match || !match.performance_data) return;
+        if(!match) return;
 
-        // Gather Inputs
-        const updatedData = match.performance_data.map((p, index) => {
-            const input = document.getElementById(`perf-input-${index}`);
-            return { ...p, result: input ? input.value : p.result };
-        });
+        // Update local data
+        match.performance_data[idx].result = input.value;
 
-        // Save to DB
-        const { error } = await supabaseClient
-            .from('matches')
-            .update({ performance_data: updatedData })
-            .eq('id', matchId);
-
-        if (error) showToast("Failed to save results", "error");
+        // Sync to DB
+        const { error } = await supabaseClient.from('matches').update({ performance_data: match.performance_data }).eq('id', matchId);
+        
+        if(error) showToast("Save Failed", "error");
         else {
-            showToast("Results Saved!", "success");
-            // Update local cache
-            match.performance_data = updatedData;
+            showToast("Saved!", "success");
+            syncToRealtime(matchId);
         }
     }
 
-    window.endPerformanceMatch = function(matchId) {
-        showConfirmDialog("End Event?", "Ensure all results are entered. Admin will verify winners.", async () => {
-            closeModal('modal-confirm');
-            window.savePerformanceResults(matchId); // Save one last time
-            
-            // Just mark as Completed. Winners calculated by Admin later or auto-calc here if needed.
-            // For now, let's keep it simple: Volunteer just inputs data.
-            // OR: We can trigger the sort logic here if you want Volunteer to declare winner.
-            // Admin logic from previous turns does the sorting. Volunteer just marks 'Completed'? 
-            // Better: Volunteer just saves. Admin finalizes. Or let's allow Volunteer to "Finish" it.
-            
-            const { error } = await supabaseClient
-                .from('matches')
-                .update({ status: 'Completed', is_live: false })
-                .eq('id', matchId);
-
-            if(error) showToast("Error ending event", "error");
-            else {
-                showToast("Event Finished!", "success");
-                window.closeMatchPanel();
-            }
-        });
-    }
-
-    // --- ACTIONS: STANDARD ---
-    window.startMatch = function(matchId) {
-        showConfirmDialog("Start Match?", "It will be visible on Live Boards immediately.", async () => {
-            closeModal('modal-confirm');
-            const { error } = await supabaseClient
-                .from('matches')
-                .update({ status: 'Live', is_live: true, score1: 0, score2: 0 })
-                .eq('id', matchId);
-
-            if (error) showToast("Error starting match", "error");
-            else {
-                showToast("Match Started!", "success");
-                await syncToRealtime(matchId);
-                await window.loadAssignedMatches(); 
-                window.openMatchPanel(matchId); 
-            }
-        });
-    }
-
-    window.updateScore = async function(matchId, scoreField, delta, currentVal) {
-        const newVal = Math.max(0, (currentVal || 0) + delta);
+    window.promptWalkover = function(matchId, t1, t2) {
+        // Custom Modal Logic for Walkover
+        const modal = document.getElementById('modal-confirm');
+        const title = document.getElementById('confirm-title');
+        const msg = document.getElementById('confirm-msg');
+        const btnContainer = modal.querySelector('.flex.gap-3');
         
-        const { error } = await supabaseClient
-            .from('matches')
-            .update({ [scoreField]: newVal })
-            .eq('id', matchId);
+        title.innerText = "Declare Walkover";
+        msg.innerText = "Who is present and wins?";
+        
+        // Replace buttons dynamically for this action
+        btnContainer.innerHTML = `
+            <button onclick="confirmWalkover('${matchId}', '${t1}', '${matchId}_1')" class="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl text-xs">${t1}</button>
+            <button onclick="confirmWalkover('${matchId}', '${t2}', '${matchId}_2')" class="flex-1 py-3 bg-pink-600 text-white font-bold rounded-xl text-xs">${t2}</button>
+        `;
+        
+        modal.classList.remove('hidden');
+    }
 
-        if (error) showToast("Sync Error", "error");
+    window.confirmWalkover = async function(matchId, winnerName, teamRef) { // teamRef is just placeholder logic
+        // Find actual IDs
+        const match = allMatchesCache.find(m => m.id === matchId);
+        const winnerId = (winnerName === match.team1_name) ? match.team1_id : match.team2_id;
+
+        document.getElementById('modal-confirm').classList.add('hidden');
+
+        const { error } = await supabaseClient.from('matches').update({
+            status: 'Completed',
+            is_live: false,
+            winner_id: winnerId,
+            winner_text: `Winner (Walkover): ${winnerName}`
+        }).eq('id', matchId);
+
+        if(error) showToast("Error", "error");
         else {
+            showToast("Walkover Recorded", "success");
+            syncToRealtime(matchId);
+            closeMatchPanel();
+        }
+        
+        // Reset Modal Buttons for next time (Standard Reset)
+        setupConfirmModal(); 
+    }
+
+    window.startMatch = async function(matchId) {
+        const { error } = await supabaseClient.from('matches').update({ status: 'Live', is_live: true }).eq('id', matchId);
+        if(!error) {
+            showToast("Match Live!", "success");
+            syncToRealtime(matchId);
+            loadAssignedMatches();
+            openMatchPanel(matchId);
+        }
+    }
+
+    window.updateScore = async function(matchId, field, delta, current) {
+        const newVal = Math.max(0, current + delta);
+        const { error } = await supabaseClient.from('matches').update({ [field]: newVal }).eq('id', matchId);
+        
+        if(!error) {
             const match = allMatchesCache.find(m => m.id === matchId);
             if(match) {
-                match[scoreField] = newVal;
+                match[field] = newVal;
                 updateLivePanelUI(match);
             }
-            await syncToRealtime(matchId);
-        }
-    }
-
-    window.enableEndBtn = function(matchId) {
-        const select = document.getElementById(`winner-select-${matchId}`);
-        const btn = document.getElementById(`btn-end-${matchId}`);
-        if(!select || !btn) return;
-
-        if (select.value) {
-            btn.disabled = false;
-            btn.classList.remove('bg-gray-700', 'text-gray-500', 'cursor-not-allowed', 'dark:bg-gray-300');
-            btn.classList.add('bg-brand-primary', 'text-white', 'shadow-xl', 'active:scale-95');
-        } else {
-            btn.disabled = true;
-            btn.classList.add('bg-gray-700', 'text-gray-500', 'cursor-not-allowed', 'dark:bg-gray-300');
-            btn.classList.remove('bg-brand-primary', 'text-white', 'shadow-xl', 'active:scale-95');
+            syncToRealtime(matchId);
         }
     }
 
     window.endMatch = function(matchId) {
-        const select = document.getElementById(`winner-select-${matchId}`);
-        if(!select) return;
-        const winnerId = select.value;
-        const winnerName = select.options[select.selectedIndex].text;
+        // For standard match, simple confirm
+        const match = allMatchesCache.find(m => m.id === matchId);
+        if(match.score1 === match.score2) return showToast("Cannot end draw. Use Golden Point.", "error");
+        
+        const winner = match.score1 > match.score2 ? match.team1_name : match.team2_name;
+        const winnerId = match.score1 > match.score2 ? match.team1_id : match.team2_id;
 
-        if (!winnerId) return showToast("Please select a winner first", "error");
-
-        showConfirmDialog("Confirm Result?", `Winner: ${winnerName}\nThis will end the match permanently.`, async () => {
-            closeModal('modal-confirm');
-            const { error } = await supabaseClient
-                .from('matches')
-                .update({ 
-                    status: 'Completed', 
-                    is_live: false, 
-                    winner_id: winnerId,
-                    winner_text: `Winner: ${winnerName}`
-                })
-                .eq('id', matchId);
-
-            if (error) showToast("Error ending match", "error");
-            else {
-                showToast("Match Completed!", "success");
-                await syncToRealtime(matchId);
-                window.closeMatchPanel();
-            }
-        });
+        if(confirm(`End Match? Winner: ${winner}`)) {
+            supabaseClient.from('matches').update({
+                status: 'Completed',
+                is_live: false,
+                winner_id: winnerId,
+                winner_text: `Winner: ${winner}`
+            }).eq('id', matchId).then(({error}) => {
+                if(!error) {
+                    showToast("Match Ended", "success");
+                    syncToRealtime(matchId);
+                    closeMatchPanel();
+                }
+            });
+        }
     }
 
-    window.declareWalkover = function(matchId) {
-        showConfirmDialog("Declare Walkover?", "Is the opponent absent? You will need to select the PRESENT team as the winner.", () => {
-            closeModal('modal-confirm');
-            const content = document.getElementById('live-match-content');
-            if(content) content.scrollTop = content.scrollHeight;
-            const select = document.getElementById(`winner-select-${matchId}`);
-            if(select) {
-                select.focus();
-                select.classList.add('ring-4', 'ring-green-500');
-                setTimeout(() => select.classList.remove('ring-4', 'ring-green-500'), 2000);
-            }
-            showToast("Select the Winner below to finish.", "info");
-        });
-    }
-
-    window.closeMatchPanel = function() {
-        document.getElementById('modal-live-match').classList.add('hidden');
-        currentLiveMatchId = null;
-        window.loadAssignedMatches(); 
+    window.endPerformanceMatch = function(matchId) {
+        if(confirm("End Event? Make sure all results are saved.")) {
+            supabaseClient.from('matches').update({ status: 'Completed', is_live: false }).eq('id', matchId).then(({error}) => {
+                if(!error) {
+                    showToast("Event Closed", "success");
+                    closeMatchPanel();
+                }
+            });
+        }
     }
 
     // --- UTILS ---
-    let confirmCallback = null;
     function setupConfirmModal() {
-        const btnYes = document.getElementById('btn-confirm-yes');
-        const btnCancel = document.getElementById('btn-confirm-cancel');
-        if(btnYes) btnYes.onclick = () => confirmCallback && confirmCallback();
-        if(btnCancel) btnCancel.onclick = () => { closeModal('modal-confirm'); confirmCallback = null; };
-    }
-
-    function showConfirmDialog(title, msg, onConfirm) {
-        const titleEl = document.getElementById('confirm-title');
-        const msgEl = document.getElementById('confirm-msg');
         const modal = document.getElementById('modal-confirm');
-        if(titleEl) titleEl.innerText = title;
-        if(msgEl) msgEl.innerText = msg;
-        confirmCallback = onConfirm;
-        if(modal) modal.classList.remove('hidden');
+        const container = modal.querySelector('.flex.gap-3');
+        // Reset to default Yes/No
+        container.innerHTML = `
+            <button id="btn-confirm-cancel" onclick="document.getElementById('modal-confirm').classList.add('hidden')" class="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-bold rounded-xl">Cancel</button>
+            <button id="btn-confirm-yes" class="flex-1 py-3 bg-black dark:bg-white text-white dark:text-black font-bold rounded-xl shadow-lg">Yes</button>
+        `;
     }
 
-    function closeModal(id) {
-        const el = document.getElementById(id);
-        if(el) el.classList.add('hidden');
-    }
-
-    function showToast(msg, type) {
-        const t = document.getElementById('toast-container');
-        if(!t) return;
-        
-        // Remove existing toast content to force refresh
-        t.innerHTML = '';
-        
-        const div = document.createElement('div');
-        div.className = 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 px-5 py-4 rounded-2xl shadow-2xl flex items-center gap-4 backdrop-blur-md border border-gray-700/50 dark:border-gray-200/50';
-        
-        const icon = type === 'error' ? '<i data-lucide="alert-triangle" class="w-5 h-5 text-red-400"></i>' : '<i data-lucide="check-circle" class="w-5 h-5 text-green-400"></i>';
-        
-        div.innerHTML = `<div>${icon}</div><p class="text-sm font-bold flex-1 tracking-wide">${msg}</p>`;
-        
-        t.appendChild(div);
-        if(window.lucide) lucide.createIcons();
-        
-        t.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-10');
-        setTimeout(() => {
-            t.classList.add('opacity-0', 'pointer-events-none', 'translate-y-10');
-        }, 3000);
-    }
-
-    // Inject Toast if missing
     function injectToastContainer() {
         if(!document.getElementById('toast-container')) {
             const div = document.createElement('div');
             div.id = 'toast-container';
             div.className = 'fixed bottom-10 left-1/2 transform -translate-x-1/2 z-[99] transition-all duration-300 opacity-0 pointer-events-none translate-y-10 w-11/12 max-w-sm';
+            div.innerHTML = `<div id="toast-content" class="bg-gray-900 text-white px-5 py-4 rounded-2xl shadow-2xl flex items-center gap-4"><div id="toast-icon"></div><p id="toast-msg" class="text-sm font-bold flex-1"></p></div>`;
             document.body.appendChild(div);
         }
     }
 
-})(); // END IIFE
+    function showToast(msg, type='info') {
+        const t = document.getElementById('toast-container');
+        const m = document.getElementById('toast-msg');
+        const i = document.getElementById('toast-icon');
+        if(t && m) {
+            m.innerText = msg;
+            i.innerHTML = type === 'error' ? '<i data-lucide="alert-triangle" class="w-5 h-5 text-red-400"></i>' : '<i data-lucide="check-circle" class="w-5 h-5 text-green-400"></i>';
+            if(window.lucide) lucide.createIcons();
+            t.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-10');
+            setTimeout(() => t.classList.add('opacity-0', 'pointer-events-none', 'translate-y-10'), 3000);
+        }
+    }
+
+})();
