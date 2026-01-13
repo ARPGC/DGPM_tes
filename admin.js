@@ -4,20 +4,24 @@ let currentUser = null;
 let currentView = 'dashboard';
 let tempSchedule = []; 
 let currentMatchViewFilter = 'Scheduled'; 
-let allTeamsCache = []; // For search
-let dataCache = []; // For export
-let allSportsCache = []; // For volunteer assignment
+let allTeamsCache = []; // Search Cache
+let dataCache = []; // Export Cache
+let allSportsCache = []; // Volunteer Assignment Cache
 const DEFAULT_AVATAR = "https://t4.ftcdn.net/jpg/05/89/93/27/360_F_589932782_vQAEAZhHnq1QCGu5ikwrYaQD0Mmurm0N.jpg";
 
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', async () => {
     if(window.lucide) lucide.createIcons();
     injectToastContainer();
+    
+    // Ensure Modal HTML exists for Scheduler
+    injectScheduleModal();
+
     await checkAdminAuth();
     switchView('dashboard');
 });
 
-// --- 1. AUTH & LOGGING ---
+// --- 1. AUTHENTICATION & LOGGING ---
 async function checkAdminAuth() {
     const { data: { session } } = await supabaseClient.auth.getSession();
     if (!session) { window.location.href = 'login.html'; return; }
@@ -33,14 +37,18 @@ async function checkAdminAuth() {
     loadDashboardStats();
 }
 
+// CENTRAL LOGGING FUNCTION
 async function logAdminAction(action, details) {
+    console.log(`[ADMIN LOG] ${action}: ${details}`);
     try {
         await supabaseClient.from('admin_logs').insert({
             admin_email: currentUser.email,
             action: action,
             details: details
         });
-    } catch (err) { console.error("Log failed:", err); }
+    } catch (err) {
+        console.error("Logging failed:", err);
+    }
 }
 
 function adminLogout() {
@@ -52,6 +60,7 @@ function adminLogout() {
 window.switchView = function(viewId) {
     currentView = viewId;
     
+    // Toggle Visibility
     document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
     const target = document.getElementById('view-' + viewId);
     if(target) {
@@ -61,30 +70,32 @@ window.switchView = function(viewId) {
         target.classList.add('animate-fade-in');
     }
 
+    // Update Sidebar
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
     const navBtn = document.getElementById('nav-' + viewId);
     if(navBtn) navBtn.classList.add('active');
 
+    // Update Title
     const titleEl = document.getElementById('page-title');
     if(titleEl) titleEl.innerText = viewId.charAt(0).toUpperCase() + viewId.slice(1);
 
+    // Toggle Export Buttons
     const globalActions = document.getElementById('global-actions');
     if(globalActions) {
-        if (['users', 'teams', 'matches'].includes(viewId)) globalActions.classList.remove('hidden');
+        if (['users', 'teams', 'matches', 'logs'].includes(viewId)) globalActions.classList.remove('hidden');
         else globalActions.classList.add('hidden');
     }
 
+    // Data Loading Routing
     dataCache = [];
     if(viewId === 'users') loadUsersList();
     if(viewId === 'sports') loadSportsList();
-    if(viewId === 'matches') {
-        setupMatchFilters();
-        loadMatches('Scheduled');
-    }
+    if(viewId === 'matches') { setupMatchFilters(); loadMatches('Scheduled'); }
     if(viewId === 'teams') loadTeamsList();
+    if(viewId === 'logs') loadActivityLogs();
 }
 
-// --- 3. EXPORT LOGIC ---
+// --- 3. EXPORT SYSTEM ---
 window.exportCurrentPage = function(type) {
     if (!dataCache || dataCache.length === 0) return showToast("No data to export", "error");
     const filename = `urja_${currentView}_${new Date().toISOString().split('T')[0]}`;
@@ -94,7 +105,7 @@ window.exportCurrentPage = function(type) {
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
         XLSX.writeFile(wb, `${filename}.xlsx`);
-        logAdminAction('EXPORT_EXCEL', `Exported ${currentView}`);
+        logAdminAction('EXPORT_EXCEL', `Exported ${currentView} view`);
     } 
     else if (type === 'pdf') {
         const { jsPDF } = window.jspdf;
@@ -106,7 +117,7 @@ window.exportCurrentPage = function(type) {
         doc.text(`URJA 2026 - ${currentView.toUpperCase()}`, 14, 22);
         doc.autoTable({ head: [headers], body: rows, startY: 30, theme: 'grid', styles: { fontSize: 8 } });
         doc.save(`${filename}.pdf`);
-        logAdminAction('EXPORT_PDF', `Exported ${currentView}`);
+        logAdminAction('EXPORT_PDF', `Exported ${currentView} view`);
     }
 }
 
@@ -190,7 +201,7 @@ window.handleAddSport = async function(e) {
     if(error) showToast(error.message, "error");
     else {
         showToast("Sport Added!", "success");
-        logAdminAction('ADD_SPORT', `Added ${name}`);
+        logAdminAction('ADD_SPORT', `Added sport: ${name}`);
         closeModal('modal-add-sport');
         loadSportsList();
     }
@@ -199,10 +210,11 @@ window.handleAddSport = async function(e) {
 window.toggleSportStatus = async function(id, currentStatus) {
     const newStatus = currentStatus === 'Open' ? 'Closed' : 'Open';
     await supabaseClient.from('sports').update({ status: newStatus }).eq('id', id);
+    logAdminAction('TOGGLE_SPORT', `Changed sport status to ${newStatus}`);
     loadSportsList();
 }
 
-// --- 6. SCHEDULER & MATCH ACTIONS ---
+// --- 6. TOURNAMENT & MATCH SCHEDULER ---
 
 window.handleScheduleClick = async function(sportId, sportName, isPerformance, sportType) {
     if (isPerformance) {
@@ -212,7 +224,7 @@ window.handleScheduleClick = async function(sportId, sportName, isPerformance, s
     }
 }
 
-// A. Performance Events
+// A. PERFORMANCE EVENTS
 async function initPerformanceEvent(sportId, sportName) {
     const { data: existing } = await supabaseClient.from('matches').select('id').eq('sport_id', sportId).neq('status', 'Completed');
     if (existing && existing.length > 0) return showToast("Event is already active!", "info");
@@ -227,49 +239,12 @@ async function initPerformanceEvent(sportId, sportName) {
     if (error) showToast(error.message, "error");
     else {
         showToast(`${sportName} started!`, "success");
-        logAdminAction('START_EVENT', sportName);
+        logAdminAction('START_EVENT', `Started Performance Event: ${sportName}`);
         loadSportsList();
     }
 }
 
-window.endPerformanceEvent = async function(matchId) {
-    if (!confirm("Are you sure? This will Calculate Winners and END the event.")) return;
-
-    const { data: match } = await supabaseClient.from('matches').select('performance_data, sports(unit)').eq('id', matchId).single();
-    let arr = match.performance_data;
-    const unit = match.sports.unit;
-
-    let validEntries = arr.filter(p => p.result && p.result.trim() !== '');
-    const isDistance = unit === 'Meters' || unit === 'Points';
-    validEntries.sort((a, b) => {
-        const valA = parseFloat(a.result) || 0;
-        const valB = parseFloat(b.result) || 0;
-        return isDistance ? (valB - valA) : (valA - valB);
-    });
-
-    let winners = { gold: null, silver: null, bronze: null };
-    validEntries.forEach((p, i) => {
-        p.rank = i + 1;
-        if(i === 0) winners.gold = p.name;
-        if(i === 1) winners.silver = p.name;
-        if(i === 2) winners.bronze = p.name;
-    });
-
-    const finalData = [...validEntries, ...arr.filter(p => !p.result || p.result.trim() === '')];
-    const winnerText = `Gold: ${winners.gold || '-'}`;
-
-    const { error } = await supabaseClient.from('matches').update({ performance_data: finalData, status: 'Completed', winner_text: winnerText, winners_data: winners, is_live: false }).eq('id', matchId);
-
-    if(error) showToast("Error: " + error.message, "error");
-    else {
-        showToast("Event Ended!", "success");
-        logAdminAction('END_EVENT', `Ended Match ID ${matchId}`);
-        loadMatches(currentMatchViewFilter); 
-        loadSportsList(); 
-    }
-}
-
-// B. Tournament Scheduler
+// B. TOURNAMENT ROUNDS
 async function initTournamentRound(sportId, sportName, sportType) {
     showToast("Analyzing Bracket...", "info");
     const intSportId = parseInt(sportId); 
@@ -280,6 +255,7 @@ async function initTournamentRound(sportId, sportName, sportType) {
     let candidates = [];
 
     if (!latestMatches || latestMatches.length === 0) {
+        // ROUND 1: Initialization
         if (sportType === 'Individual') await supabaseClient.rpc('prepare_individual_teams', { sport_id_input: intSportId });
         await supabaseClient.rpc('auto_lock_tournament_teams', { sport_id_input: intSportId });
 
@@ -288,6 +264,7 @@ async function initTournamentRound(sportId, sportName, sportType) {
 
         candidates = validTeams.map(t => ({ id: t.team_id, name: t.team_name, category: t.category }));
     } else {
+        // NEXT ROUNDS: Winner Propagation
         const lastRound = latestMatches[0].round_number;
         const { count: pendingCount } = await supabaseClient.from('matches').select('*', { count: 'exact', head: true }).eq('sport_id', intSportId).eq('round_number', lastRound).neq('status', 'Completed');
 
@@ -312,9 +289,11 @@ async function initTournamentRound(sportId, sportName, sportType) {
     else if (candidates.length <= 4) matchType = 'Semi-Final';
 
     if (candidates.length <= 4) {
+        // Merge Pools for Semi/Finals
         candidates.sort(() => Math.random() - 0.5); 
         generatePairsFromList(candidates, round, matchType);
     } else {
+        // Split Pools Logic (Jr vs Jr, Sr vs Sr)
         const juniors = candidates.filter(c => c.category === 'Junior').sort(() => Math.random() - 0.5);
         const seniors = candidates.filter(c => c.category === 'Senior').sort(() => Math.random() - 0.5);
         generatePairsFromList(juniors, round, matchType);
@@ -335,17 +314,28 @@ function generatePairsFromList(list, round, matchType) {
 }
 
 function openSchedulePreviewModal(sportName, round, schedule, sportId) {
-    document.getElementById('preview-subtitle').innerText = `Generating Round ${round}`;
+    // FIX: Ensure ID exists or alert (Prevents NULL error)
+    const titleEl = document.getElementById('preview-subtitle');
     const container = document.getElementById('schedule-preview-list');
+    
+    if(!titleEl || !container) {
+        console.error("Missing Modal DOM Elements. Injecting now...");
+        injectScheduleModal(); // Retry
+        setTimeout(() => openSchedulePreviewModal(sportName, round, schedule, sportId), 100);
+        return;
+    }
+
+    titleEl.innerText = `Generating Round ${round}`;
+    
     const venueOptions = `<option value="College Ground">College Ground</option><option value="Badminton Hall">Badminton Hall</option><option value="Old Gymkhana">Old Gymkhana</option>`;
 
     container.innerHTML = schedule.map((m, idx) => `
         <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row items-center gap-4">
             <div class="flex-1 text-center md:text-left">
                 <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">${m.type}</span>
-                <div class="font-bold text-gray-900 text-lg">${m.t1.name} <span class="text-[10px] bg-gray-100 px-1 rounded">${m.t1.category || ''}</span></div>
+                <div class="font-bold text-gray-900 text-lg">${m.t1.name}</div>
                 <div class="text-xs text-gray-400 font-bold my-1">VS</div>
-                <div class="font-bold text-gray-900 text-lg ${m.t2.id ? '' : 'text-gray-400 italic'}">${m.t2.name} <span class="text-[10px] bg-gray-100 px-1 rounded">${m.t2.category || ''}</span></div>
+                <div class="font-bold text-gray-900 text-lg ${m.t2.id ? '' : 'text-gray-400 italic'}">${m.t2.name}</div>
             </div>
             ${m.t2.id ? `
             <div class="flex gap-2 w-full md:w-auto">
@@ -385,14 +375,98 @@ async function confirmSchedule(sportId) {
 
     if(error) { showToast(error.message, "error"); btn.innerText = "Confirm & Publish"; btn.disabled = false; } 
     else {
-        showToast("Round Generated!", "success");
-        logAdminAction('PUBLISH_ROUND', `Published round for Sport ID ${sportId}`);
+        showToast("Round Generated Successfully!", "success");
+        logAdminAction('SCHEDULE_ROUND', `Created round for sport ID ${sportId}`);
         closeModal('modal-schedule-preview');
         loadSportsList();
     }
 }
 
-// --- 7. USERS (PROMOTION & RESET RESTORED) ---
+// --- 7. MATCH MANAGEMENT (Tabs & Actions) ---
+
+function setupMatchFilters() {
+    const container = document.getElementById('view-matches');
+    if(!document.getElementById('match-filter-tabs')) {
+        const div = document.createElement('div');
+        div.id = 'match-filter-tabs';
+        div.className = "flex gap-2 mb-6 border-b border-gray-200 pb-2";
+        div.innerHTML = `
+            <button onclick="loadMatches('Scheduled')" id="btn-filter-scheduled" class="px-4 py-2 text-sm font-bold text-gray-500 hover:text-black transition-colors">Scheduled</button>
+            <button onclick="loadMatches('Live')" id="btn-filter-live" class="px-4 py-2 text-sm font-bold text-gray-500 hover:text-black transition-colors">Live</button>
+            <button onclick="loadMatches('Completed')" id="btn-filter-completed" class="px-4 py-2 text-sm font-bold text-gray-500 hover:text-black transition-colors">Completed</button>
+        `;
+        container.insertBefore(div, document.getElementById('matches-grid'));
+    }
+}
+
+window.loadMatches = async function(statusFilter = 'Scheduled') {
+    currentMatchViewFilter = statusFilter;
+    
+    document.querySelectorAll('#match-filter-tabs button').forEach(btn => {
+        if(btn.innerText === statusFilter) btn.className = "px-4 py-2 text-sm font-bold text-black border-b-2 border-black";
+        else btn.className = "px-4 py-2 text-sm font-bold text-gray-500 hover:text-black";
+    });
+
+    const container = document.getElementById('matches-grid');
+    if(!container) return;
+    container.innerHTML = '<p class="col-span-3 text-center text-gray-400 py-10">Loading matches...</p>';
+
+    const { data: matches } = await supabaseClient.from('matches').select('*, sports(name, is_performance, unit)').eq('status', statusFilter).order('start_time', { ascending: true });
+
+    if(matches) {
+        dataCache = matches.map(m => ({ Round: m.round_number, Sport: m.sports.name, Team1: m.team1_name, Team2: m.team2_name, Status: m.status }));
+    }
+
+    if (!matches || matches.length === 0) {
+        container.innerHTML = `<p class="col-span-3 text-center text-gray-400 py-10">No ${statusFilter} matches found.</p>`;
+        return;
+    }
+
+    container.innerHTML = matches.map(m => `
+        <div class="w-full bg-white p-5 rounded-3xl border border-gray-200 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
+            <div class="flex justify-between items-start mb-4">
+                 <div class="flex items-center">
+                    ${m.status==='Live' ? `<span class="bg-red-50 text-red-600 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider animate-pulse">LIVE</span>` : `<span class="bg-gray-100 text-gray-500 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider">${new Date(m.start_time).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>`}
+                 </div>
+                 <span class="text-xs text-gray-500 font-bold uppercase tracking-wider">${m.sports.name}</span>
+            </div>
+            
+            ${m.sports.is_performance ? 
+                `<div class="text-center py-2"><h4 class="font-black text-xl text-gray-900">${m.team1_name}</h4><p class="text-xs text-gray-400 font-bold uppercase">Performance Event</p></div>`
+            : 
+                `<div class="flex items-center justify-between w-full mb-4 px-2">
+                    <h4 class="font-bold text-lg text-gray-900 leading-tight text-left w-1/3 truncate">${m.team1_name}</h4>
+                    <span class="text-[10px] font-bold text-gray-300 px-2">VS</span>
+                    <h4 class="font-bold text-lg text-gray-900 leading-tight text-right w-1/3 truncate">${m.team2_name}</h4>
+                </div>`
+            }
+
+            <div class="border-t border-gray-100 pt-4 flex items-center justify-between gap-3">
+                 <div class="text-xs font-bold text-gray-400 flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3"></i> ${m.location || 'N/A'}</div>
+                 <div>
+                    ${m.sports.is_performance && m.status === 'Live' ? 
+                        `<button onclick="endPerformanceEvent('${m.id}')" class="px-3 py-1.5 bg-red-500 text-white text-xs font-bold rounded-lg hover:bg-red-600 shadow-sm transition-colors">End Event</button>`
+                    : 
+                        m.status === 'Scheduled' ? 
+                            `<button onclick="startMatch('${m.id}')" class="px-3 py-1.5 bg-green-500 text-white text-xs font-bold rounded-lg hover:bg-green-600 shadow-sm transition-colors">Start Match</button>` 
+                        : `<span class="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-1 rounded border border-gray-200">${m.winner_text || 'Completed'}</span>`
+                    }
+                 </div>
+            </div>
+        </div>
+    `).join('');
+    if(window.lucide) lucide.createIcons();
+}
+
+window.startMatch = async function(matchId) {
+    if(!confirm("Start this match now? It will appear as LIVE.")) return;
+    await supabaseClient.from('matches').update({ status: 'Live', is_live: true }).eq('id', matchId);
+    showToast("Match is now LIVE!", "success");
+    logAdminAction('MATCH_START', `Started match ID ${matchId}`);
+    loadMatches('Live');
+}
+
+// --- 8. USERS (Promote, Assign, Reset, Search) ---
 async function loadUsersList() {
     const tbody = document.getElementById('users-table-body');
     if(!tbody) return;
@@ -409,27 +483,15 @@ async function loadUsersList() {
         <tr class="border-b border-gray-50 hover:bg-gray-50">
             <td class="p-4 flex items-center gap-3">
                 <img src="${u.avatar_url || DEFAULT_AVATAR}" class="w-8 h-8 rounded-full object-cover bg-gray-200">
-                <div>
-                    <div class="font-bold text-gray-900">${u.first_name} ${u.last_name}</div>
-                    <div class="text-xs text-gray-500">${u.email}</div>
-                </div>
+                <div><div class="font-bold text-gray-900">${u.first_name} ${u.last_name}</div><div class="text-xs text-gray-500">${u.email}</div></div>
             </td>
             <td class="p-4"><span class="px-2 py-1 rounded text-xs font-bold ${u.role==='admin'?'bg-purple-50 text-purple-600': u.role==='volunteer'?'bg-indigo-50 text-indigo-600':'bg-gray-100 text-gray-600'} uppercase">${u.role}</span></td>
             <td class="p-4 text-gray-600">${u.class_name || '-'} <span class="text-xs text-gray-400">(${u.student_id})</span></td>
-            
             <td class="p-4">
-                ${u.role === 'volunteer' ? 
-                    `<select onchange="assignVolunteerSport('${u.id}', this.value)" class="p-1 text-xs border rounded bg-white w-full">
-                        <option value="">-- Assign Sport --</option>
-                        ${sportOptions}
-                    </select>` 
-                : '-'}
+                ${u.role === 'volunteer' ? `<select onchange="assignVolunteerSport('${u.id}', this.value)" class="p-1 text-xs border rounded bg-white w-full"><option value="">-- Assign Sport --</option>${sportOptions}</select>` : '-'}
             </td>
-
             <td class="p-4 text-right flex justify-end gap-2">
-                ${u.role !== 'admin' && u.role !== 'volunteer' ? 
-                    `<button onclick="promoteUser('${u.id}')" class="text-xs bg-indigo-50 text-indigo-600 px-3 py-1 rounded-lg font-bold hover:bg-indigo-100">Make Vol</button>` : ''}
-                
+                ${u.role !== 'admin' && u.role !== 'volunteer' ? `<button onclick="promoteUser('${u.id}')" class="text-xs bg-indigo-50 text-indigo-600 px-3 py-1 rounded-lg font-bold hover:bg-indigo-100">Make Vol</button>` : ''}
                 <button onclick="resetUserPassword('${u.id}', '${u.first_name}')" class="text-xs bg-red-50 text-red-600 px-3 py-1 rounded-lg font-bold hover:bg-red-100 border border-red-100">Reset</button>
             </td>
         </tr>
@@ -439,8 +501,8 @@ async function loadUsersList() {
 window.promoteUser = async function(userId) {
     if(!confirm("Promote this user to Volunteer?")) return;
     await supabaseClient.from('users').update({ role: 'volunteer' }).eq('id', userId);
-    showToast("User promoted to Volunteer!", "success");
-    logAdminAction('PROMOTE_USER', `Promoted User ID ${userId}`);
+    showToast("User promoted!", "success");
+    logAdminAction('PROMOTE_USER', `Promoted user ${userId}`);
     loadUsersList();
 }
 
@@ -448,6 +510,7 @@ window.assignVolunteerSport = async function(userId, sportId) {
     const val = sportId === "" ? null : sportId;
     await supabaseClient.from('users').update({ assigned_sport_id: val }).eq('id', userId);
     showToast("Volunteer Sport Assigned", "success");
+    logAdminAction('ASSIGN_SPORT', `Assigned sport ${sportId} to user ${userId}`);
 }
 
 window.resetUserPassword = async function(userId, name) {
@@ -467,7 +530,28 @@ window.filterUsers = function() {
     });
 }
 
-// --- 8. TEAMS ---
+// --- 9. ACTIVITY LOGS ---
+async function loadActivityLogs() {
+    const tbody = document.getElementById('logs-table-body');
+    if(!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center">Loading...</td></tr>';
+    
+    const { data: logs } = await supabaseClient.from('admin_logs').select('*').order('created_at', { ascending: false }).limit(100);
+    
+    if(logs) {
+        dataCache = logs.map(l => ({ Time: new Date(l.created_at).toLocaleString(), Admin: l.admin_email, Action: l.action, Details: l.details }));
+        tbody.innerHTML = logs.map(l => `
+            <tr class="border-b border-gray-50">
+                <td class="p-4 text-xs text-gray-500 font-mono">${new Date(l.created_at).toLocaleString()}</td>
+                <td class="p-4 font-bold text-gray-800">${l.admin_email}</td>
+                <td class="p-4"><span class="bg-gray-100 px-2 py-1 rounded text-xs font-bold">${l.action}</span></td>
+                <td class="p-4 text-gray-600 text-sm">${l.details}</td>
+            </tr>
+        `).join('');
+    }
+}
+
+// --- 10. TEAMS ---
 async function loadTeamsList() {
     const grid = document.getElementById('teams-grid');
     if(!grid) return;
@@ -514,89 +598,6 @@ window.viewTeamSquad = async function(teamId, teamName) {
     alert(msg);
 }
 
-// --- 9. MATCHES (FILTERS & ACTIONS RESTORED) ---
-function setupMatchFilters() {
-    const container = document.getElementById('view-matches');
-    if(!document.getElementById('match-filter-tabs')) {
-        const div = document.createElement('div');
-        div.id = 'match-filter-tabs';
-        div.className = "flex gap-2 mb-6 border-b border-gray-200 pb-2";
-        div.innerHTML = `
-            <button onclick="loadMatches('Scheduled')" id="btn-filter-scheduled" class="px-4 py-2 text-sm font-bold text-gray-500 hover:text-black">Scheduled</button>
-            <button onclick="loadMatches('Live')" id="btn-filter-live" class="px-4 py-2 text-sm font-bold text-gray-500 hover:text-black">Live</button>
-            <button onclick="loadMatches('Completed')" id="btn-filter-completed" class="px-4 py-2 text-sm font-bold text-gray-500 hover:text-black">Completed</button>
-        `;
-        container.insertBefore(div, document.getElementById('matches-grid'));
-    }
-}
-
-window.loadMatches = async function(statusFilter = 'Scheduled') {
-    currentMatchViewFilter = statusFilter;
-    
-    document.querySelectorAll('#match-filter-tabs button').forEach(btn => {
-        if(btn.innerText === statusFilter) btn.className = "px-4 py-2 text-sm font-bold text-black border-b-2 border-black";
-        else btn.className = "px-4 py-2 text-sm font-bold text-gray-500 hover:text-black";
-    });
-
-    const container = document.getElementById('matches-grid');
-    if(!container) return;
-    container.innerHTML = '<p class="col-span-3 text-center text-gray-400 py-10">Loading matches...</p>';
-
-    const { data: matches } = await supabaseClient.from('matches').select('*, sports(name, is_performance)').eq('status', statusFilter).order('start_time', { ascending: true });
-
-    if(matches) {
-        dataCache = matches.map(m => ({ Round: m.round_number, Sport: m.sports.name, Team1: m.team1_name, Team2: m.team2_name, Time: new Date(m.start_time).toLocaleString(), Status: m.status }));
-    }
-
-    if (!matches || matches.length === 0) {
-        container.innerHTML = `<p class="col-span-3 text-center text-gray-400 py-10">No ${statusFilter} matches found.</p>`;
-        return;
-    }
-
-    container.innerHTML = matches.map(m => `
-        <div class="w-full bg-white p-5 rounded-3xl border border-gray-200 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
-            <div class="flex justify-between items-start mb-4">
-                 <div class="flex items-center">
-                    ${m.status==='Live' ? `<span class="bg-red-50 text-red-600 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider animate-pulse">LIVE</span>` : `<span class="bg-gray-100 text-gray-500 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider">${new Date(m.start_time).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>`}
-                 </div>
-                 <span class="text-xs text-gray-500 font-bold uppercase tracking-wider">${m.sports.name}</span>
-            </div>
-            
-            ${m.sports.is_performance ? 
-                `<div class="text-center py-2"><h4 class="font-black text-xl text-gray-900">${m.team1_name}</h4><p class="text-xs text-gray-400 font-bold uppercase">Performance Event</p></div>`
-            : 
-                `<div class="flex items-center justify-between w-full mb-4 px-2">
-                    <h4 class="font-bold text-lg text-gray-900 leading-tight text-left w-1/3 truncate">${m.team1_name}</h4>
-                    <span class="text-[10px] font-bold text-gray-300 px-2">VS</span>
-                    <h4 class="font-bold text-lg text-gray-900 leading-tight text-right w-1/3 truncate">${m.team2_name}</h4>
-                </div>`
-            }
-
-            <div class="border-t border-gray-100 pt-4 flex items-center justify-between gap-3">
-                 <div class="text-xs font-bold text-gray-400 flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3"></i> ${m.location || 'N/A'}</div>
-                 <div>
-                    ${m.sports.is_performance && m.status === 'Live' ? 
-                        `<button onclick="endPerformanceEvent('${m.id}')" class="px-3 py-1.5 bg-red-500 text-white text-xs font-bold rounded-lg hover:bg-red-600 shadow-sm">End Event</button>`
-                    : 
-                        m.status === 'Scheduled' ? 
-                            `<button onclick="startMatch('${m.id}')" class="px-3 py-1.5 bg-green-500 text-white text-xs font-bold rounded-lg hover:bg-green-600 shadow-sm">Start Match</button>` 
-                        : `<span class="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-1 rounded border border-gray-200">${m.winner_text || 'Completed'}</span>`
-                    }
-                 </div>
-            </div>
-        </div>
-    `).join('');
-    if(window.lucide) lucide.createIcons();
-}
-
-window.startMatch = async function(matchId) {
-    if(!confirm("Start this match now? It will appear as LIVE.")) return;
-    await supabaseClient.from('matches').update({ status: 'Live', is_live: true }).eq('id', matchId);
-    showToast("Match is now LIVE!", "success");
-    loadMatches('Live');
-    loadSportsList();
-}
-
 // --- UTILS ---
 window.closeModal = (id) => document.getElementById(id).classList.add('hidden');
 
@@ -623,4 +624,27 @@ function showToast(msg, type) {
         t.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-10');
         setTimeout(() => t.classList.add('opacity-0', 'pointer-events-none', 'translate-y-10'), 3000);
     }
+}
+
+// **CRITICAL FIX**: Dynamically inject Schedule Modal HTML if missing
+function injectScheduleModal() {
+    if(document.getElementById('modal-schedule-preview')) return;
+    
+    const div = document.createElement('div');
+    div.id = 'modal-schedule-preview';
+    div.className = 'hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm';
+    div.innerHTML = `
+        <div class="bg-white p-6 rounded-2xl w-full max-w-2xl max-h-[80vh] overflow-y-auto m-4">
+            <div class="flex justify-between items-center mb-6">
+                <div>
+                    <h3 class="font-bold text-xl">Schedule Preview</h3>
+                    <p id="preview-subtitle" class="text-sm text-gray-500">Generating...</p>
+                </div>
+                <button onclick="closeModal('modal-schedule-preview')" class="p-2 bg-gray-100 rounded-full"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div id="schedule-preview-list" class="space-y-3 mb-6"></div>
+            <button id="btn-confirm-schedule" class="w-full py-3 bg-black text-white font-bold rounded-xl shadow-lg">Confirm & Publish</button>
+        </div>
+    `;
+    document.body.appendChild(div);
 }
