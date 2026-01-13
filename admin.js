@@ -3,10 +3,12 @@ const supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.s
 let currentUser = null;
 let tempSchedule = []; 
 let currentMatchViewFilter = 'Scheduled'; 
+let allTeamsCache = []; // Cache for search functionality
 
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', async () => {
     lucide.createIcons();
+    injectToastContainer(); // Ensure toast UI exists
     await checkAdminAuth();
     switchView('dashboard');
 });
@@ -19,8 +21,8 @@ async function checkAdminAuth() {
     const { data: user } = await supabaseClient.from('users').select('role').eq('id', session.user.id).single();
 
     if (!user || user.role !== 'admin') {
-        alert("Access Denied: Admins Only");
-        window.location.href = 'login.html';
+        showToast("Access Denied: Admins Only", "error");
+        setTimeout(() => window.location.href = 'login.html', 1500);
         return;
     }
     currentUser = session.user;
@@ -43,6 +45,7 @@ window.switchView = function(viewId) {
         target.classList.add('animate-fade-in');
     }
 
+    // Update Nav State
     document.querySelectorAll('.nav-item').forEach(el => {
         el.classList.remove('bg-brand-primary', 'text-white');
         el.classList.add('text-gray-500', 'hover:bg-gray-50');
@@ -67,12 +70,11 @@ async function loadDashboardStats() {
     const { count: userCount } = await supabaseClient.from('users').select('*', { count: 'exact', head: true });
     const { count: regCount } = await supabaseClient.from('registrations').select('*', { count: 'exact', head: true });
     const { count: teamCount } = await supabaseClient.from('teams').select('*', { count: 'exact', head: true });
-    const { count: matchCount } = await supabaseClient.from('matches').select('*', { count: 'exact', head: true }).eq('status', 'Live');
-
+    // Removed Live Match Count as requested to remove "Live Lights"
+    
     document.getElementById('dash-total-users').innerText = userCount || 0;
     document.getElementById('dash-total-regs').innerText = regCount || 0;
     document.getElementById('dash-total-teams').innerText = teamCount || 0;
-    document.getElementById('dash-live-matches').innerText = matchCount || 0;
 }
 
 // --- 4. SPORTS MANAGEMENT ---
@@ -224,6 +226,7 @@ window.endPerformanceEvent = async function(matchId) {
 
     let validEntries = arr.filter(p => p.result && p.result.trim() !== '');
     
+    // Sort Logic (High to Low for Distance, Low to High for Time)
     const isDistance = unit === 'Meters' || unit === 'Points';
     validEntries.sort((a, b) => {
         const valA = parseFloat(a.result) || 0;
@@ -242,18 +245,13 @@ window.endPerformanceEvent = async function(matchId) {
     const finalData = [...validEntries, ...arr.filter(p => !p.result || p.result.trim() === '')];
     const winnerText = `Gold: ${winners.gold || '-'}`;
 
-    // 1. Update Data
-    await supabaseClient.from('matches').update({ 
+    const { error } = await supabaseClient.from('matches').update({ 
         performance_data: finalData,
-        winners_data: winners
+        status: 'Completed',
+        winner_text: winnerText,
+        winners_data: winners,
+        is_live: false 
     }).eq('id', matchId);
-
-    // 2. Force Status via RPC (Ensure this function exists in SQL)
-    const { error } = await supabaseClient.rpc('force_end_match', { 
-        match_id_input: matchId, 
-        winner_id_input: null, 
-        winner_text_input: winnerText 
-    });
 
     if(error) showToast("Error: " + error.message, "error");
     else {
@@ -263,11 +261,11 @@ window.endPerformanceEvent = async function(matchId) {
     }
 }
 
-// B. STRICT TOURNAMENT LOGIC + INDIVIDUAL PLAYER FIX
+// B. SMART TOURNAMENT SCHEDULER (JR vs JR / SR vs SR)
 async function initTournamentRound(sportId, sportName, sportType) {
     showToast("Analyzing Bracket...", "info");
 
-    const intSportId = parseInt(sportId); // Ensure Integer
+    const intSportId = parseInt(sportId); 
 
     const { data: matches } = await supabaseClient.from('matches')
         .select('round_number, status')
@@ -279,29 +277,30 @@ async function initTournamentRound(sportId, sportName, sportType) {
     let candidates = [];
 
     if (!matches || matches.length === 0) {
-        // --- ROUND 1 START ---
+        // --- ROUND 1: INITIALIZE ---
         
-        // 1. INDIVIDUAL SPORT FIX (RPC Call)
+        // 1. Sync Individual Players as Teams
         if (sportType === 'Individual') {
             showToast("Syncing individual players...", "info");
-            const { error: syncError } = await supabaseClient.rpc('prepare_individual_teams', { sport_id_input: intSportId });
-            if (syncError) {
-                console.error(syncError);
-                return showToast("Error syncing: " + syncError.message, "error");
-            }
+            await supabaseClient.rpc('prepare_individual_teams', { sport_id_input: intSportId });
         }
 
-        // 2. FETCH VALID TEAMS (FULL SQUADS ONLY)
-        const { data: validTeams, error } = await supabaseClient.rpc('get_valid_teams', { sport_id_input: intSportId });
+        // 2. Auto-Lock Top 64 Teams
+        await supabaseClient.rpc('auto_lock_tournament_teams', { sport_id_input: intSportId });
+
+        // 3. Fetch Valid Teams with Categories
+        // The SQL function returns: team_id, team_name, category ('Junior' or 'Senior')
+        const { data: validTeams, error } = await supabaseClient.rpc('get_tournament_teams', { sport_id_input: intSportId });
         
         if (error) { console.error(error); return showToast("DB Error: " + error.message, "error"); }
         if (!validTeams || validTeams.length < 2) return showToast("Need at least 2 VALID TEAMS to start.", "error");
 
-        candidates = validTeams.map(t => ({ id: t.team_id, name: t.team_name }));
-        
-        // Auto-Lock
-        const ids = candidates.map(c => c.id);
-        await supabaseClient.from('teams').update({ status: 'Locked' }).in('id', ids);
+        // Format for pairing
+        candidates = validTeams.map(t => ({ 
+            id: t.team_id, 
+            name: t.team_name,
+            category: t.category 
+        }));
 
     } else {
         // --- NEXT ROUNDS ---
@@ -317,33 +316,67 @@ async function initTournamentRound(sportId, sportName, sportType) {
         if (!winners || winners.length < 2) return showToast("Tournament Completed or Insufficient Winners.", "success");
 
         const winnerIds = winners.map(w => w.winner_id);
-        const { data: teamDetails } = await supabaseClient.from('teams').select('id, name').in('id', winnerIds);
-        candidates = teamDetails;
+        
+        // Fetch Team Details + Category for Next Round Logic
+        const { data: teamDetails } = await supabaseClient
+            .from('teams')
+            .select(`id, name, captain:users!captain_id(class_name)`)
+            .in('id', winnerIds);
+
+        candidates = teamDetails.map(t => ({
+            id: t.id,
+            name: t.name,
+            category: (['FYJC', 'SYJC'].includes(t.captain.class_name)) ? 'Junior' : 'Senior'
+        }));
     }
 
-    // Generate Schedule
-    candidates.sort(() => Math.random() - 0.5); 
+    // --- PAIRING LOGIC ---
     tempSchedule = [];
-
+    
+    // Determine Match Type (Finals, Semi, etc)
     let matchType = 'Regular';
     if (candidates.length === 2) matchType = 'Final';
     else if (candidates.length <= 4) matchType = 'Semi-Final';
     else if (candidates.length <= 8) matchType = 'Quarter-Final';
 
-    for (let i = 0; i < candidates.length; i += 2) {
-        if (i + 1 < candidates.length) {
+    // *** THE MERGE LOGIC ***
+    // If <= 4 teams (Semi-Finals/Finals), MIX everyone (Jr vs Sr allowed)
+    // Else, Separate Jr vs Jr and Sr vs Sr
+    
+    if (candidates.length <= 4) {
+        // --- OPEN POOL (The Merge) ---
+        candidates.sort(() => Math.random() - 0.5); // Random Mix
+        generatePairsFromList(candidates, round, matchType);
+    } else {
+        // --- SPLIT POOL ---
+        const juniors = candidates.filter(c => c.category === 'Junior').sort(() => Math.random() - 0.5);
+        const seniors = candidates.filter(c => c.category === 'Senior').sort(() => Math.random() - 0.5);
+        
+        generatePairsFromList(juniors, round, matchType);
+        generatePairsFromList(seniors, round, matchType);
+        
+        // Handle Leftovers (Rare case where odd numbers in split but even total)
+        // Note: For simplicity in this logic, Byes are handled per pool.
+    }
+
+    openSchedulePreviewModal(sportName, round, tempSchedule, intSportId);
+}
+
+function generatePairsFromList(list, round, matchType) {
+    for (let i = 0; i < list.length; i += 2) {
+        if (i + 1 < list.length) {
             tempSchedule.push({
-                t1: candidates[i],
-                t2: candidates[i+1],
+                t1: list[i],
+                t2: list[i+1],
                 time: "10:00",
-                location: "Main Ground",
+                location: "College Ground", // Default
                 round: round,
                 type: matchType
             });
         } else {
              // Bye logic
              tempSchedule.push({
-                t1: candidates[i],
+                t1: list[i],
                 t2: { id: null, name: "BYE (Auto-Advance)" },
                 time: "10:00",
                 location: "N/A",
@@ -352,29 +385,32 @@ async function initTournamentRound(sportId, sportName, sportType) {
              });
         }
     }
-
-    openSchedulePreviewModal(sportName, round, tempSchedule, intSportId);
 }
 
 function openSchedulePreviewModal(sportName, round, schedule, sportId) {
     document.getElementById('preview-subtitle').innerText = `Generating Round ${round}`;
     const container = document.getElementById('schedule-preview-list');
     
+    // Venue Options (Fixed)
+    const venueOptions = `
+        <option value="College Ground">College Ground</option>
+        <option value="Badminton Hall">Badminton Hall</option>
+        <option value="Old Gymkhana">Old Gymkhana</option>
+    `;
+
     container.innerHTML = schedule.map((m, idx) => `
         <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row items-center gap-4">
             <div class="flex-1 text-center md:text-left">
                 <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">${m.type}</span>
-                <div class="font-bold text-gray-900 text-lg">${m.t1.name}</div>
+                <div class="font-bold text-gray-900 text-lg">${m.t1.name} <span class="text-[10px] bg-gray-100 px-1 rounded">${m.t1.category || ''}</span></div>
                 <div class="text-xs text-gray-400 font-bold my-1">VS</div>
-                <div class="font-bold text-gray-900 text-lg ${m.t2.id ? '' : 'text-gray-400 italic'}">${m.t2.name}</div>
+                <div class="font-bold text-gray-900 text-lg ${m.t2.id ? '' : 'text-gray-400 italic'}">${m.t2.name} <span class="text-[10px] bg-gray-100 px-1 rounded">${m.t2.category || ''}</span></div>
             </div>
             ${m.t2.id ? `
             <div class="flex gap-2 w-full md:w-auto">
                 <input type="time" class="input-field p-2 w-full md:w-24 bg-gray-50 border rounded-lg text-sm font-bold" value="${m.time}" onchange="updateTempSchedule(${idx}, 'time', this.value)">
-                <select class="input-field p-2 w-full md:w-32 bg-gray-50 border rounded-lg text-sm font-bold" onchange="updateTempSchedule(${idx}, 'location', this.value)">
-                    <option value="Main Ground">Main Ground</option>
-                    <option value="Court A">Court A</option>
-                    <option value="Court B">Court B</option>
+                <select class="input-field p-2 w-full md:w-40 bg-gray-50 border rounded-lg text-sm font-bold" onchange="updateTempSchedule(${idx}, 'location', this.value)">
+                    ${venueOptions}
                 </select>
             </div>` : `<span class="text-xs font-bold text-green-500 bg-green-50 px-2 py-1 rounded">Walkover</span>`}
         </div>
@@ -490,7 +526,7 @@ window.loadMatches = async function(statusFilter = 'Scheduled') {
 
             <div class="border-t border-gray-100 pt-4 flex items-center justify-between gap-3">
                  <div class="text-xs font-bold text-gray-400 flex items-center gap-1">
-                    <i data-lucide="map-pin" class="w-3 h-3"></i> ${m.location || 'Main Ground'}
+                    <i data-lucide="map-pin" class="w-3 h-3"></i> ${m.location || 'N/A'}
                  </div>
                  
                  <div>
@@ -516,16 +552,51 @@ window.startMatch = async function(matchId) {
     loadSportsList();
 }
 
-// --- 7. TEAMS & 8. USERS (Standard Logic) ---
+// --- 7. TEAMS (WITH SEARCH & FILTER) ---
 
 async function loadTeamsList() {
     const grid = document.getElementById('teams-grid');
     grid.innerHTML = '<p class="col-span-3 text-center text-gray-400 py-10">Loading teams...</p>';
+    
+    // Inject Search UI if not present
+    let searchContainer = document.getElementById('teams-search-container');
+    if(!searchContainer) {
+        searchContainer = document.createElement('div');
+        searchContainer.id = 'teams-search-container';
+        searchContainer.className = "col-span-3 mb-4 flex gap-2";
+        searchContainer.innerHTML = `
+            <input type="text" id="team-search-input" onkeyup="filterTeamsList()" placeholder="Search by Team Name or Captain..." class="flex-1 p-3 bg-white border border-gray-200 rounded-xl text-sm outline-none focus:border-black">
+            <button onclick="filterTeamsList('Locked')" class="px-4 py-2 bg-gray-100 text-gray-600 font-bold text-xs rounded-xl hover:bg-gray-200">Locked Only</button>
+        `;
+        grid.parentElement.insertBefore(searchContainer, grid);
+    }
 
-    const { data: teams } = await supabaseClient.from('teams').select('*, sports(name), captain:users!captain_id(first_name, last_name)');
+    const { data: teams } = await supabaseClient
+        .from('teams')
+        .select('*, sports(name), captain:users!captain_id(first_name, last_name)')
+        .order('created_at', { ascending: false });
 
+    allTeamsCache = teams || [];
+    renderTeams(allTeamsCache);
+}
+
+window.filterTeamsList = function(statusFilter = null) {
+    const query = document.getElementById('team-search-input').value.toLowerCase();
+    let filtered = allTeamsCache.filter(t => 
+        t.name.toLowerCase().includes(query) || 
+        (t.captain && (t.captain.first_name + ' ' + t.captain.last_name).toLowerCase().includes(query))
+    );
+
+    if (statusFilter === 'Locked') {
+        filtered = filtered.filter(t => t.status === 'Locked');
+    }
+    renderTeams(filtered);
+}
+
+function renderTeams(teams) {
+    const grid = document.getElementById('teams-grid');
     if (!teams || teams.length === 0) {
-        grid.innerHTML = '<p class="col-span-3 text-center text-gray-400 py-10">No teams created yet.</p>';
+        grid.innerHTML = '<p class="col-span-3 text-center text-gray-400 py-10">No teams found.</p>';
         return;
     }
 
@@ -546,16 +617,45 @@ window.viewTeamSquad = async function(teamId, teamName) {
     const { data: members } = await supabaseClient.from('team_members').select('users(first_name, last_name)').eq('team_id', teamId).eq('status', 'Accepted');
     let msg = `Squad for ${teamName}:\n\n`;
     if(members) members.forEach((m, i) => msg += `${i+1}. ${m.users.first_name} ${m.users.last_name}\n`);
-    alert(msg);
+    alert(msg); // Keeping simple alert for this detail view as it's just info
 }
+
+// --- 8. USERS (SEARCH ADDED) ---
 
 async function loadUsersList() {
     const tbody = document.getElementById('users-table-body');
     tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-400">Loading...</td></tr>';
     
-    const { data: users } = await supabaseClient.from('users').select('*, assigned_sport:sports!assigned_sport_id(name)').order('created_at', { ascending: false }).limit(50);
+    // Inject Search for Users if not present
+    let uSearch = document.getElementById('user-search-input');
+    if(!uSearch) {
+        const wrapper = document.createElement('div');
+        wrapper.className = "mb-4 px-4";
+        wrapper.innerHTML = `<input id="user-search-input" onkeyup="filterUsersList()" placeholder="Search Student..." class="w-full p-3 bg-white border border-gray-200 rounded-xl text-sm outline-none focus:border-black">`;
+        tbody.parentElement.parentElement.insertBefore(wrapper, tbody.parentElement);
+    }
+
+    const { data: users } = await supabaseClient.from('users').select('*, assigned_sport:sports!assigned_sport_id(name)').order('created_at', { ascending: false }).limit(100);
     const { data: sports } = await supabaseClient.from('sports').select('id, name');
 
+    // Store globally for filtering
+    window.allUsersCache = users; 
+    window.allSportsCache = sports;
+    
+    renderUsers(users, sports);
+}
+
+window.filterUsersList = function() {
+    const query = document.getElementById('user-search-input').value.toLowerCase();
+    const filtered = window.allUsersCache.filter(u => 
+        (u.first_name + ' ' + u.last_name).toLowerCase().includes(query) ||
+        (u.student_id && u.student_id.toLowerCase().includes(query))
+    );
+    renderUsers(filtered, window.allSportsCache);
+}
+
+function renderUsers(users, sports) {
+    const tbody = document.getElementById('users-table-body');
     tbody.innerHTML = users.map(u => {
         const sportOptions = sports.map(s => `<option value="${s.id}" ${u.assigned_sport_id === s.id ? 'selected' : ''}>${s.name}</option>`).join('');
         return `
@@ -589,16 +689,32 @@ window.promoteUser = async function(userId) {
     loadUsersList();
 }
 
+// --- UTILS ---
 window.closeModal = (id) => document.getElementById(id).classList.add('hidden');
+
+// Inject Toast HTML
+function injectToastContainer() {
+    if(!document.getElementById('toast-container')) {
+        const div = document.createElement('div');
+        div.id = 'toast-container';
+        div.className = 'fixed bottom-10 left-1/2 transform -translate-x-1/2 z-[70] transition-all duration-300 opacity-0 pointer-events-none translate-y-10';
+        div.innerHTML = `
+            <div id="toast-content" class="bg-gray-900 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3">
+                <div id="toast-icon"></div>
+                <p id="toast-text" class="text-sm font-bold"></p>
+            </div>`;
+        document.body.appendChild(div);
+    }
+}
 
 function showToast(msg, type) {
     const t = document.getElementById('toast-container');
-    const c = document.getElementById('toast-content');
     const txt = document.getElementById('toast-text');
     const icon = document.getElementById('toast-icon');
-    c.className = `px-6 py-4 rounded-xl shadow-2xl font-bold text-sm flex items-center gap-3 ${type === 'error' ? 'bg-red-500 text-white' : 'bg-gray-900 text-white'}`;
+    
     txt.innerText = msg;
-    icon.innerHTML = type === 'error' ? '<i data-lucide="alert-circle" class="w-5 h-5"></i>' : '<i data-lucide="check-circle" class="w-5 h-5"></i>';
+    icon.innerHTML = type === 'error' ? '<i data-lucide="alert-circle" class="w-5 h-5 text-red-400"></i>' : '<i data-lucide="check-circle" class="w-5 h-5 text-green-400"></i>';
+    
     lucide.createIcons();
     t.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-10');
     setTimeout(() => t.classList.add('opacity-0', 'pointer-events-none', 'translate-y-10'), 3000);
