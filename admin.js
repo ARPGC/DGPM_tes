@@ -501,15 +501,15 @@ async function loadRegistrationsList() {
     if(!tbody) return;
     tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center">Loading registrations...</td></tr>';
 
-    const { data: regs, error } = await supabaseClient
+   const { data: regs, error } = await supabaseClient
         .from('registrations')
         .select(`
-            id, created_at, status,
+            id, created_at,
             users (first_name, last_name, student_id, class_name, gender, mobile, email),
             sports (name)
         `)
         .order('created_at', { ascending: false });
-
+    
     if(error) {
         console.error(error);
         return showToast("Failed to load registrations", "error");
