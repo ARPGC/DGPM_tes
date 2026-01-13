@@ -11,47 +11,25 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="config.js"></script>
-    <script src="volunteer.js" defer></script>
 
     <script>
         tailwind.config = {
             theme: {
                 extend: {
                     colors: {
-                        brand: {
-                            primary: '#4F46E5', // Indigo 600
-                            dark: '#111827' // Gray 900
-                        }
-                    },
-                    animation: {
-                        'fade-in': 'fadeIn 0.3s ease-out',
-                        'slide-up': 'slideUp 0.3s ease-out'
-                    },
-                    keyframes: {
-                        fadeIn: {
-                            '0%': { opacity: '0', transform: 'translateY(10px)' },
-                            '100%': { opacity: '1', transform: 'translateY(0)' }
-                        },
-                        slideUp: {
-                            '0%': { transform: 'translateY(100%)' },
-                            '100%': { transform: 'translateY(0)' }
-                        }
+                        brand: { primary: '#4F46E5', dark: '#111827' }
                     }
                 }
             }
         }
     </script>
-    
     <style>
         body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
-        /* Hide Scrollbar but keep functionality */
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        /* Safe area padding for iPhones */
-        .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
     </style>
 </head>
-<body class="bg-gray-50 text-gray-800 pb-20 min-h-screen">
+<body class="bg-gray-50 text-gray-800 pb-24 min-h-screen">
 
     <header class="bg-white p-4 sticky top-0 z-30 shadow-sm border-b border-gray-100">
         <div class="flex justify-between items-center mb-4">
@@ -118,5 +96,6 @@
         </div>
     </div>
 
+    <script src="volunteer.js"></script>
 </body>
 </html>
