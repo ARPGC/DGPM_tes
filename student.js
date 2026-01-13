@@ -2,24 +2,23 @@
 const supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
 let currentUser = null;
 let myRegistrations = []; 
-let selectedSportForReg = null;
 let currentScheduleView = 'upcoming'; 
 let allSportsList = [];
 
 const DEFAULT_TEAM_SIZE = 5;
+const TOURNAMENT_CAP = 64; // Max locked teams allowed per sport
 const DEFAULT_AVATAR = "https://t4.ftcdn.net/jpg/05/89/93/27/360_F_589932782_vQAEAZhHnq1QCGu5ikwrYaQD0Mmurm0N.jpg";
 
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', async () => {
     lucide.createIcons();
     initTheme();
-    setupImageUpload(); // Image Upload Listener
+    setupImageUpload(); 
     await checkAuth();
     
     setupTabSystem();
     setupConfirmModal(); 
     
-    // Default Load (Renamed from Home)
     window.switchTab('dashboard');
 });
 
@@ -140,22 +139,18 @@ async function fetchMyRegistrations() {
     }
 }
 
-// --- DASHBOARD STATS (PERFORMANCE) ---
+// --- DASHBOARD STATS ---
 async function loadUserStats() {
-    // 1. Total Matches
     const { count: matches } = await supabaseClient.from('registrations')
         .select('*', { count: 'exact', head: true }).eq('user_id', currentUser.id);
 
-    // 2. Total Wins
     const { count: wins } = await supabaseClient.from('registrations')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', currentUser.id).eq('player_status', 'Won');
 
-    // Update Profile Tab Stat
     const statEl = document.getElementById('stat-matches-played');
     if(statEl) statEl.innerText = matches || 0;
     
-    // Update Dashboard Stats Card
     const dashStats = document.getElementById('dashboard-stats-container');
     if(dashStats) {
         dashStats.innerHTML = `
@@ -178,7 +173,7 @@ window.logout = async function() {
     window.location.href = 'login.html';
 }
 
-// --- 3. NAVIGATION & TABS ---
+// --- 3. NAVIGATION ---
 function setupTabSystem() {
     window.switchTab = function(tabId) {
         document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
@@ -235,7 +230,6 @@ async function loadLatestChampions() {
         return `
         <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm relative overflow-hidden mb-3">
             <h4 class="font-black text-gray-900 dark:text-white uppercase mb-2 text-sm">${m.sports.name}</h4>
-            
             <div class="space-y-1">
                 ${w.gold ? `<div class="flex items-center gap-2 text-xs font-bold"><span class="text-yellow-500">🥇</span> <span class="text-gray-800 dark:text-gray-200">${w.gold}</span></div>` : ''}
                 ${w.silver ? `<div class="flex items-center gap-2 text-xs font-bold"><span class="text-gray-400">🥈</span> <span class="text-gray-600 dark:text-gray-400">${w.silver}</span></div>` : ''}
@@ -392,12 +386,9 @@ window.openMatchDetails = async function(matchId) {
         if (!results || results.length === 0) {
             tbody.innerHTML = '<tr><td colspan="3" class="px-4 py-8 text-center text-gray-400 italic">No results available yet.</td></tr>';
         } else {
-            // STRICT SORT: Low to High (Rank 1 top)
+            // STRICT SORT
             results.sort((a, b) => {
-                // If ranks exist, sort by rank
                 if (a.rank && b.rank) return a.rank - b.rank;
-                
-                // If no rank, sort by raw value (Ascending)
                 const valA = parseFloat(a.result) || 999999;
                 const valB = parseFloat(b.result) || 999999;
                 return valA - valB;
@@ -494,7 +485,7 @@ window.loadTeamMarketplace = async function() {
 
     let query = supabaseClient
         .from('teams')
-        .select(`*, sports(name, team_size), captain:users!captain_id(first_name, gender)`)
+        .select(`*, sports(name, team_size), captain:users!captain_id(first_name, gender, class_name)`)
         .eq('status', 'Open')
         .order('created_at', { ascending: false });
 
@@ -507,13 +498,28 @@ window.loadTeamMarketplace = async function() {
          return;
     }
 
-    const validTeams = teams.filter(t => t.captain?.gender === currentUser.gender);
+    // Filter: Show only teams matching Gender AND Class Category (Jr vs Sr)
+    // EXCEPTION: eSports (BGMI/Free Fire) allows mixed classes and genders
+    const validTeams = teams.filter(t => {
+        const isEsports = ['BGMI', 'FREE FIRE'].includes(t.sports.name);
+        
+        // Gender Check
+        if (!isEsports && t.captain?.gender !== currentUser.gender) return false;
+
+        // Class Check (Jr vs Sr)
+        if (!isEsports) {
+            const myCategory = (['FYJC', 'SYJC'].includes(currentUser.class_name)) ? 'Junior' : 'Senior';
+            const teamCategory = (['FYJC', 'SYJC'].includes(t.captain.class_name)) ? 'Junior' : 'Senior';
+            if (myCategory !== teamCategory) return false;
+        }
+        
+        return true;
+    });
 
     const teamPromises = validTeams.map(async (t) => {
         const { count } = await supabaseClient.from('team_members').select('*', { count: 'exact', head: true }).eq('team_id', t.id).eq('status', 'Accepted');
         const max = t.sports.team_size || DEFAULT_TEAM_SIZE;
-        const seatsLeft = Math.max(0, max - (count || 0));
-        return { ...t, seatsLeft };
+        return { ...t, seatsLeft: Math.max(0, max - (count || 0)) };
     });
 
     const teamsWithCounts = await Promise.all(teamPromises);
@@ -525,7 +531,7 @@ window.loadTeamMarketplace = async function() {
             ? "w-full py-3 bg-gray-300 dark:bg-gray-700 text-gray-500 cursor-not-allowed text-xs font-bold rounded-xl"
             : "w-full py-3 bg-black dark:bg-white dark:text-black text-white text-xs font-bold rounded-xl shadow-lg active:scale-95 transition-transform hover:opacity-90";
         
-        const action = isFull ? "" : `window.viewSquadAndJoin('${t.id}', '${t.sports.name}', ${t.seatsLeft})`;
+        const action = isFull ? "" : `window.viewSquadAndJoin('${t.id}', '${t.sports.name}', ${t.seatsLeft}, '${t.sports.type}')`;
 
         return `
         <div class="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm mb-3">
@@ -547,8 +553,24 @@ window.loadTeamMarketplace = async function() {
     `}).join('');
 }
 
-window.viewSquadAndJoin = async function(teamId, sportName, seatsLeft) {
+// Check Eligibility Helper
+function checkGenderEligibility(sportName, sportType) {
+    if (sportType === 'Team') {
+        const allowedFemales = ['Relay Race', 'BGMI', 'FREE FIRE'];
+        if (currentUser.gender === 'Female' && !allowedFemales.includes(sportName)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+window.viewSquadAndJoin = async function(teamId, sportName, seatsLeft, sportType) {
     if(seatsLeft <= 0) return showToast("❌ This team is full!", "error");
+
+    // Gender Block Logic
+    if (!checkGenderEligibility(sportName, sportType)) {
+        return showToast("⚠️ Females allowed only in Relay & eSports.", "error");
+    }
 
     const sportId = await getSportIdByName(sportName);
     
@@ -591,7 +613,7 @@ window.loadTeamLocker = async function() {
 
     const { data: memberships } = await supabaseClient
         .from('team_members')
-        .select(`id, status, teams (id, name, status, captain_id, sports(name))`)
+        .select(`id, status, teams (id, name, status, captain_id, sport_id, sports(name))`)
         .eq('user_id', currentUser.id);
 
     if(!memberships || memberships.length === 0) {
@@ -613,6 +635,15 @@ window.loadTeamLocker = async function() {
             
         const squadHtml = squad.map(s => `<span class="text-[10px] bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded inline-block mr-1 mb-1 border border-gray-200 dark:border-gray-600">${s.users.first_name}</span>`).join('');
 
+        // TOURNAMENT FULL CHECK
+        let disableLock = false;
+        if (!isLocked && isCaptain) {
+            const { count: lockedCount } = await supabaseClient.from('teams')
+                .select('*', { count: 'exact', head: true })
+                .eq('sport_id', t.sport_id).eq('status', 'Locked');
+            if (lockedCount >= TOURNAMENT_CAP) disableLock = true;
+        }
+
         return `
         <div class="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm mb-3 transition-colors">
             <div class="flex justify-between items-start mb-3">
@@ -630,11 +661,11 @@ window.loadTeamLocker = async function() {
             
             <div class="flex gap-2">
                 ${isCaptain ? 
-                    `<button onclick="window.openManageTeamModal('${t.id}', '${t.name}', ${isLocked})" class="flex-1 py-2 bg-brand-primary text-white text-xs font-bold rounded-lg shadow-md">Manage Team</button>
+                    `<button onclick="window.openManageTeamModal('${t.id}', '${t.name}', ${isLocked}, ${disableLock})" class="flex-1 py-2 bg-brand-primary text-white text-xs font-bold rounded-lg shadow-md">Manage Team</button>
                      ${!isLocked ? `<button onclick="window.promptDeleteTeam('${t.id}')" class="px-3 py-2 bg-gray-100 dark:bg-gray-700 text-red-500 rounded-lg"><i data-lucide="trash-2" class="w-4 h-4"></i></button>` : ''}`
                 : 
                     !isLocked ? `<button onclick="window.leaveTeam('${m.id}', '${t.name}')" class="flex-1 py-2 bg-white dark:bg-gray-700 border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 text-xs font-bold rounded-lg">Leave Team</button>` 
-                    : `<div class="w-full py-2 bg-gray-100 dark:bg-gray-700 text-center rounded-lg text-xs font-bold text-gray-500 dark:text-gray-400">Status: Locked</div>`
+                    : `<div class="w-full py-2 bg-gray-100 dark:bg-gray-700 text-center rounded-lg text-xs font-bold text-gray-500 dark:text-gray-400 flex items-center justify-center gap-1"><i data-lucide="lock" class="w-3 h-3"></i> Locked</div>`
                 }
             </div>
         </div>`;
@@ -846,7 +877,6 @@ async function getSportIdByName(name) {
 
 window.closeModal = id => document.getElementById(id).classList.add('hidden');
 
-// NEW: Toast Notification
 window.showToast = function(msg, type='info') {
     const t = document.getElementById('toast-container');
     const msgEl = document.getElementById('toast-msg');
@@ -862,10 +892,10 @@ window.showToast = function(msg, type='info') {
     }
     
     lucide.createIcons();
-    t.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-20');
+    t.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-10');
     
     setTimeout(() => {
-        t.classList.add('opacity-0', 'pointer-events-none', 'translate-y-20');
+        t.classList.add('opacity-0', 'pointer-events-none', 'translate-y-10');
     }, 3000);
 }
 
@@ -945,7 +975,11 @@ window.openCreateTeamModal = async function() {
 window.createTeam = async function() {
     const name = document.getElementById('new-team-name').value;
     const sportId = document.getElementById('new-team-sport').value;
+    const sportName = document.getElementById('new-team-sport').options[document.getElementById('new-team-sport').selectedIndex].text;
     
+    // GENDER CHECK
+    if (!checkGenderEligibility(sportName, 'Team')) return showToast("⚠️ Females allowed only in Relay & eSports.", "error");
+
     if(!name) return showToast("Enter Team Name", "error");
     if(!myRegistrations.includes(parseInt(sportId)) && !myRegistrations.includes(sportId)) return showToast("⚠️ Register for this sport first!", "error");
     
@@ -963,7 +997,7 @@ window.createTeam = async function() {
     }
 }
 
-window.openManageTeamModal = async function(teamId, teamName, isLocked) {
+window.openManageTeamModal = async function(teamId, teamName, isLocked, isTournamentFull) {
     document.getElementById('manage-team-title').innerText = "Manage: " + teamName;
     
     const { data: pending } = await supabaseClient.from('team_members').select('id, users(first_name, last_name)').eq('team_id', teamId).eq('status', 'Pending');
@@ -993,9 +1027,17 @@ window.openManageTeamModal = async function(teamId, teamName, isLocked) {
     if (!isLocked) {
          const lockBtn = document.createElement('button');
          lockBtn.id = 'btn-lock-dynamic';
-         lockBtn.className = "w-full py-3 mt-4 mb-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 font-bold rounded-xl text-xs border border-red-100 dark:border-red-900 flex items-center justify-center gap-2";
-         lockBtn.innerHTML = '<i data-lucide="lock" class="w-3 h-3"></i> LOCK TEAM PERMANENTLY';
-         lockBtn.onclick = () => window.promptLockTeam(teamId);
+         
+         if (isTournamentFull) {
+             lockBtn.className = "w-full py-3 mt-4 mb-2 bg-gray-200 dark:bg-gray-700 text-gray-500 font-bold rounded-xl text-xs cursor-not-allowed";
+             lockBtn.innerHTML = 'TOURNAMENT FULL (64/64)';
+             lockBtn.disabled = true;
+         } else {
+             lockBtn.className = "w-full py-3 mt-4 mb-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 font-bold rounded-xl text-xs border border-red-100 dark:border-red-900 flex items-center justify-center gap-2";
+             lockBtn.innerHTML = '<i data-lucide="lock" class="w-3 h-3"></i> LOCK TEAM PERMANENTLY';
+             lockBtn.onclick = () => window.promptLockTeam(teamId);
+         }
+         
          memList.parentElement.parentElement.insertBefore(lockBtn, memList.parentElement.nextElementSibling);
     }
     
@@ -1006,8 +1048,13 @@ window.openManageTeamModal = async function(teamId, teamName, isLocked) {
 window.handleRequest = async function(memberId, status, teamId) {
     if(status === 'Rejected') await supabaseClient.from('team_members').delete().eq('id', memberId);
     else await supabaseClient.from('team_members').update({ status: 'Accepted' }).eq('id', memberId);
+    // Refresh modal to update counts/lock state logic
+    // Ideally pass 'false' for lock since we just accepted
     const tName = document.getElementById('manage-team-title').innerText.replace("Manage: ", "");
-    window.openManageTeamModal(teamId, tName, false);
+    // Close and reopen to refresh state simply
+    window.closeModal('modal-manage-team');
+    // We would need to refetch lock status here technically, but for now user can refresh locker
+    window.loadTeamLocker();
 }
 
 window.promptLockTeam = async function(teamId) {
@@ -1039,6 +1086,7 @@ window.removeMember = function(memberId, teamId) {
         await supabaseClient.from('team_members').delete().eq('id', memberId);
         window.closeModal('modal-confirm');
         const tName = document.getElementById('manage-team-title').innerText.replace("Manage: ", "");
-        window.openManageTeamModal(teamId, tName, false);
+        // Refresh UI via locker reload for simplicity
+        window.loadTeamLocker();
     });
 }
