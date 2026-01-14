@@ -353,26 +353,51 @@ window.realtimeClient = window.supabase.createClient(CONFIG_REALTIME.url, CONFIG
     // Replace your existing setupRealtimeSubscription function with this:
 
 // --- 5. REALTIME SUBSCRIPTION (CORRECTED) ---
-    function setupRealtimeSubscription() {
-        
-        // LISTENER 1: LIVE MATCHES (Uses realtimeClient, as per your fetch logic)
-        window.realtimeClient
-            .channel('public:live_matches')
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_matches' }, (payload) => {
-                loadLiveMatches(); 
-                
-                // Also update modal if it's open and matches this ID
-                const modal = document.getElementById('modal-match-details');
-                if (modal && !modal.classList.contains('hidden') && window.currentOpenMatchId === payload.new.id) {
-                    window.openMatchDetails(payload.new.id);
-                }
+    // Replace the existing setupRealtimeSubscription function with this:
 
-                if (payload.new.status === 'Completed') {
-                    loadLatestChampions();
-                    showToast(`🏆 Result: ${payload.new.sport_name} finished!`);
+function setupRealtimeSubscription() {
+    if (window.liveSubscription) return; 
+
+    // USE config2.js CLIENT (window.realtimeClient)
+    window.liveSubscription = window.realtimeClient
+        .channel('public:live_updates') 
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_matches' }, (payload) => {
+            console.log("⚡ Update from live_matches (Config2):", payload.new);
+            
+            // 1. Refresh the "Live Matches" Dashboard (Top of screen)
+            loadLiveMatches(); 
+
+            // 2. Refresh the "Schedule List" (The main list of cards)
+            // Even though this list loads from 'matches', we reload it 
+            // because you said the update signal comes from 'live_matches'.
+            if (typeof window.loadSchedule === 'function') {
+                window.loadSchedule();
+            }
+
+            // 3. Refresh the "Match View" (The Modal / Popup)
+            // We check if the modal is currently open.
+            const modal = document.getElementById('modal-match-details');
+            if (modal && !modal.classList.contains('hidden')) {
+                
+                // OPTION A: If 'live_matches' ID is the same as 'matches' ID (Standard):
+                if (window.currentOpenMatchId === payload.new.id) {
+                    window.openMatchDetails(window.currentOpenMatchId);
                 }
-            })
-            .subscribe();
+                
+                // OPTION B: If you want to force refresh ANY open modal when live_matches updates:
+                // window.openMatchDetails(window.currentOpenMatchId);
+            }
+
+            // 4. Toast Notification for Completed Games
+            if (payload.new.status === 'Completed') {
+                loadLatestChampions();
+                showToast(`🏆 Result: ${payload.new.sport_name} finished!`);
+            }
+        })
+        .subscribe((status) => {
+            console.log("Realtime Connection Status (Config2):", status);
+        });
+}
 
         // LISTENER 2: SCHEDULE & SCORES (Uses supabaseClient to fix Auth/RLS issues)
         // This is the critical fix for your "100m Race" modal
