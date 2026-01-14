@@ -349,31 +349,32 @@ window.realtimeClient = window.supabase.createClient(CONFIG_REALTIME.url, CONFIG
         `}).join('');
     }
 
-// --- 5. REALTIME SUBSCRIPTION (FIXED & CONNECTED) ---
+// --- 5. REALTIME SUBSCRIPTION (Original Logic Restored) ---
     function setupRealtimeSubscription() {
         if (window.liveSubscription) return; 
 
-        // Uses Config2 (Anonymous) to listen to LIVE_MATCHES
+        // Uses the anonymous client from config2.js (window.realtimeClient)
+        // Listens ONLY to the 'live_matches' table
         window.liveSubscription = window.realtimeClient
-            .channel('public:live_updates') 
+            .channel('public:live_matches')
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_matches' }, (payload) => {
                 console.log("⚡ Update from live_matches:", payload.new);
                 
-                // 1. Refresh Dashboard (Top)
+                // 1. Refresh the Dashboard (Top Cards)
                 loadLiveMatches(); 
-
-                // 2. Refresh Schedule List (Main List)
+                
+                // 2. Refresh the Schedule List (The cards in the list)
+                // We reload the list whenever a live match updates so the scores sync up
                 if (typeof window.loadSchedule === 'function') {
                     window.loadSchedule();
                 }
 
-                // 3. Refresh Modal (Popup) if open
+                // 3. Refresh the Modal (Match View)
                 const modal = document.getElementById('modal-match-details');
-                if (modal && !modal.classList.contains('hidden')) {
-                    // Update if the open match ID matches the one that just updated
-                    if (window.currentOpenMatchId === payload.new.id) {
-                        window.openMatchDetails(window.currentOpenMatchId);
-                    }
+                
+                // Only refresh if the modal is open AND matches the ID of the updated game
+                if (modal && !modal.classList.contains('hidden') && window.currentOpenMatchId === payload.new.id) {
+                    window.openMatchDetails(payload.new.id);
                 }
 
                 if (payload.new.status === 'Completed') {
@@ -385,7 +386,6 @@ window.realtimeClient = window.supabase.createClient(CONFIG_REALTIME.url, CONFIG
                 console.log("Realtime Status:", status);
             });
     }
-
     // --- 6. SCHEDULE MODULE ---
     window.filterSchedule = function(view) {
         currentScheduleView = view;
