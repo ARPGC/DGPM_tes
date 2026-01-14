@@ -209,12 +209,9 @@
         }
     }
 
-    // --- 4. DASHBOARD (LIVE & CHAMPIONS) ---
+    // --- 4. DASHBOARD (RESULTS ONLY) ---
     async function loadDashboard() {
-        // 1. Live Matches (Realtime DB - High Priority)
         loadLiveMatches();
-        
-        // 2. Champions (Realtime DB - 3 Winners)
         loadLatestChampions();
     }
 
@@ -258,7 +255,6 @@
             // Handle Performance Leader
             let perfContent = '';
             if (isPerf) {
-                // Find rank 1
                 const leader = m.performance_data.find(p => p.rank === 1) || m.performance_data[0];
                 const leaderName = leader ? leader.name.split('(')[0] : 'TBD';
                 const leaderScore = leader ? leader.result : '-';
@@ -358,10 +354,8 @@
                 const newData = payload.new;
                 if (!newData) return;
 
-                // REFRESH DASHBOARD WIDGETS
                 if (newData.status === 'Live') {
                     loadLiveMatches();
-                    // Optional toast if you want
                 } else if (newData.status === 'Completed') {
                     loadLiveMatches();
                     loadLatestChampions();
@@ -371,13 +365,13 @@
                 // REFRESH SCHEDULE LIST (To re-sort LIVE events to top)
                 const scheduleView = document.getElementById('view-schedule');
                 if (scheduleView && !scheduleView.classList.contains('hidden')) {
-                    loadSchedule();
+                    window.loadSchedule();
                 }
             })
             .subscribe();
     }
 
-    // --- 6. SCHEDULE MODULE (UPDATED WITH SEARCH/FILTER & CRICKET SUPPORT) ---
+    // --- 6. SCHEDULE MODULE (SEARCH & FILTER FIXED) ---
     window.filterSchedule = function(view) {
         currentScheduleView = view;
         const btnUp = document.getElementById('btn-schedule-upcoming');
@@ -392,10 +386,10 @@
                 btnRes.className = "flex-1 py-2.5 rounded-lg text-xs font-bold transition-all bg-white dark:bg-gray-700 shadow-sm text-brand-primary dark:text-white";
             }
         }
-        loadSchedule();
+        window.loadSchedule();
     }
 
-    async function loadSchedule() {
+    window.loadSchedule = async function() {
         const container = document.getElementById('schedule-list');
         if(!container) return;
         
@@ -413,16 +407,16 @@
         }
 
         // 2. POPULATE SPORT FILTER (If empty)
-        const sportFilterEl = document.getElementById('schedule-sport-filter');
-        if (sportFilterEl && sportFilterEl.children.length <= 1) {
-            const uniqueSports = [...new Set(matches.map(m => m.sports.name))].sort();
-            sportFilterEl.innerHTML = `<option value="">All Sports</option>` + 
+        const filterSelect = document.getElementById('schedule-sport-filter');
+        if (filterSelect && filterSelect.children.length <= 1) {
+            const uniqueSports = [...new Set(matches.map(m => m.sports?.name || 'Unknown'))].sort();
+            filterSelect.innerHTML = `<option value="">All Sports</option>` + 
                 uniqueSports.map(s => `<option value="${s}">${s}</option>`).join('');
         }
 
         // 3. APPLY FILTERS (View + Search + Sport)
         const searchText = document.getElementById('schedule-search')?.value?.toLowerCase() || '';
-        const sportFilter = document.getElementById('schedule-sport-filter')?.value || '';
+        const selectedSport = filterSelect?.value || '';
 
         let filteredMatches = matches.filter(m => {
             // A. View Filter
@@ -433,14 +427,14 @@
             if (!isViewMatch) return false;
 
             // B. Text Search
-            const sName = m.sports.name ? m.sports.name.toLowerCase() : '';
-            const t1 = m.team1_name ? m.team1_name.toLowerCase() : '';
-            const t2 = m.team2_name ? m.team2_name.toLowerCase() : '';
+            const sName = m.sports?.name?.toLowerCase() || '';
+            const t1 = m.team1_name?.toLowerCase() || '';
+            const t2 = m.team2_name?.toLowerCase() || '';
             
             const searchMatch = !searchText || sName.includes(searchText) || t1.includes(searchText) || t2.includes(searchText);
 
             // C. Sport Category Filter
-            const sportMatch = !sportFilter || m.sports.name === sportFilter;
+            const sportMatch = !selectedSport || m.sports?.name === selectedSport;
 
             return searchMatch && sportMatch;
         });
@@ -465,8 +459,8 @@
 
         container.innerHTML = filteredMatches.map(m => {
             const isLive = m.status === 'Live';
-            const isPerf = m.sports.is_performance;
-            const isCricket = m.sports.name?.toLowerCase().includes('cricket');
+            const isPerf = m.sports?.is_performance;
+            const isCricket = m.sports?.name?.toLowerCase().includes('cricket');
             
             const dateObj = new Date(m.start_time);
             const timeStr = dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
@@ -501,7 +495,7 @@
             <div onclick="window.openMatchDetails('${m.id}')" class="w-full bg-white dark:bg-gray-800 rounded-3xl p-5 relative overflow-hidden cursor-pointer active:scale-[0.98] transition-transform ${cardClass}">
                 <div class="flex justify-between items-start mb-4">
                     ${badgeHtml}
-                    <span class="text-xs text-gray-500 dark:text-gray-400 font-medium uppercase">${m.sports.name}</span>
+                    <span class="text-xs text-gray-500 dark:text-gray-400 font-medium uppercase">${m.sports?.name}</span>
                 </div>
                 ${isPerf ? 
                     `<div class="text-center py-2"><h4 class="font-black text-lg text-gray-900 dark:text-white">${m.team1_name}</h4><p class="text-xs text-gray-400 mt-1">Event Details</p></div>`
@@ -516,9 +510,9 @@
                     <span class="font-mono text-sm font-bold text-brand-primary dark:text-indigo-400">${footerText}</span>
                     <span class="text-[10px] font-bold text-gray-400 flex items-center gap-1">Details <i data-lucide="chevron-right" class="w-3 h-3"></i></span>
                 </div>
-            </div>
-            `;
+            </div>`;
         }).join('');
+        
         lucide.createIcons();
     }
 
@@ -527,10 +521,10 @@
         const { data: match } = await supabaseClient.from('matches').select('*, sports(name, is_performance, unit)').eq('id', matchId).single();
         if(!match) return;
 
-        const isPerf = match.sports.is_performance;
-        const isCricket = match.sports.name?.toLowerCase().includes('cricket');
+        const isPerf = match.sports?.is_performance;
+        const isCricket = match.sports?.name?.toLowerCase().includes('cricket');
 
-        document.getElementById('md-sport-name').innerText = match.sports.name;
+        document.getElementById('md-sport-name').innerText = match.sports?.name;
         document.getElementById('md-match-status').innerText = match.status;
 
         document.getElementById('md-layout-team').classList.add('hidden');
@@ -562,7 +556,7 @@
         } else {
             // PERFORMANCE UI
             document.getElementById('md-layout-race').classList.remove('hidden');
-            document.getElementById('md-race-metric-header').innerText = match.sports.unit || 'Result';
+            document.getElementById('md-race-metric-header').innerText = match.sports?.unit || 'Result';
 
             const tbody = document.getElementById('md-race-tbody');
             tbody.innerHTML = '';
@@ -578,9 +572,7 @@
                     const valA = parseFloat(a.result) || 0;
                     const valB = parseFloat(b.result) || 0;
                     
-                    // Assuming time (race) is ascending (less is better), distance (jump) is descending.
-                    // Simple heuristic: "Race" in name ? Ascending : Descending
-                    const isRace = match.sports.name.toLowerCase().includes('race');
+                    const isRace = match.sports?.name?.toLowerCase().includes('race');
                     if (isRace) return (valA === 0 ? 9999 : valA) - (valB === 0 ? 9999 : valB);
                     return valB - valA;
                 });
@@ -711,11 +703,6 @@
 
         const teamsWithCounts = await Promise.all(teamPromises);
 
-        if (teamsWithCounts.length === 0) {
-            container.innerHTML = '<p class="text-center text-gray-400 py-10">No teams found matching criteria.</p>';
-            return;
-        }
-
         container.innerHTML = teamsWithCounts.map(t => {
             const isFull = t.seatsLeft <= 0;
             const btnText = isFull ? "Team Full" : "View Squad & Join";
@@ -744,9 +731,6 @@
             </div>
         `}).join('');
     }
-
-    // ... (All other functions remain unchanged, including loadTeamLocker, leaveTeam, etc.) ...
-    // ... Copying existing functions below to ensure full file integrity ...
 
     function checkGenderEligibility(sportName, sportType) {
         if (sportType === 'Team') {
@@ -1062,7 +1046,7 @@
 
     window.showToast = function(msg, type='info') {
         const t = document.getElementById('toast-container');
-        if (!t) return; 
+        if (!t) return; // Guard clause for missing toast container
         
         const msgEl = document.getElementById('toast-msg');
         const iconEl = document.getElementById('toast-icon');
