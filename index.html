@@ -3,10 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>URJA 2026 | Annual Sports Meet</title>
+    <title>URJA 3.0 | B.K. Birla College Annual Sports Meet</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="config.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     
     <script>
@@ -16,38 +18,35 @@
                 extend: {
                     fontFamily: { sans: ['Outfit', 'sans-serif'] },
                     colors: {
-                        brand: { primary: '#6366F1', secondary: '#EC4899', accent: '#F59E0B' }
+                        brand: { primary: '#4F46E5', secondary: '#10B981', accent: '#F59E0B' }
                     }
                 }
             }
         }
     </script>
-    <link rel="stylesheet" href="style.css">
     <style>
-        /* Smooth scrolling for anchor links */
         html { scroll-behavior: smooth; }
-        .hero-gradient { background: linear-gradient(180deg, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.7) 100%); }
+        .hero-gradient { background: linear-gradient(180deg, rgba(0,0,0,0.4) 0%, rgba(0,0,0,0.8) 100%); }
+        .bg-birla { background-color: #ffffff; }
     </style>
 </head>
-<body class="bg-gray-50 text-gray-900 antialiased selection:bg-brand-primary selection:text-white">
+<body class="bg-birla text-gray-900 antialiased selection:bg-brand-primary selection:text-white">
 
     <nav class="fixed w-full z-50 bg-white/90 backdrop-blur-md border-b border-gray-100 transition-all duration-300" id="navbar">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between items-center h-20">
-                <div class="flex-shrink-0 flex items-center gap-2">
-                    <div class="bg-brand-primary text-white p-2 rounded-lg">
-                        <i data-lucide="flame" class="w-6 h-6"></i>
-                    </div>
-                    <span class="text-2xl font-black italic tracking-tighter text-gray-900">URJA <span class="text-brand-primary">2026</span></span>
+                <div class="flex-shrink-0 flex items-center gap-3">
+                    <img src="COLLEGE_LOGO_URL" alt="B.K. Birla College" class="h-14 w-auto">
+                    <div class="h-8 w-px bg-gray-200 hidden sm:block"></div>
+                    <span class="text-2xl font-black italic tracking-tighter text-gray-900 uppercase">URJA <span class="text-brand-primary">3.0</span></span>
                 </div>
 
                 <div class="hidden md:flex items-center space-x-8">
-                    <a href="#about" class="text-sm font-bold text-gray-500 hover:text-brand-primary transition">About</a>
-                    <a href="#guests" class="text-sm font-bold text-gray-500 hover:text-brand-primary transition">Guests</a>
-                    <a href="#gallery" class="text-sm font-bold text-gray-500 hover:text-brand-primary transition">Gallery</a>
-                    <a href="login.html" class="px-6 py-2.5 bg-brand-primary text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:-translate-y-0.5 transition-all">
-                        Login / Register
-                    </a>
+                    <a href="#about" class="text-sm font-extrabold text-gray-500 hover:text-brand-primary transition">About</a>
+                    <a href="#events" class="text-sm font-extrabold text-gray-500 hover:text-brand-primary transition">Sports</a>
+                    <a href="#partnership" class="text-sm font-extrabold text-gray-500 hover:text-brand-primary transition">Partners</a>
+                    <div id="auth-button-container">
+                        </div>
                 </div>
 
                 <div class="md:hidden flex items-center">
@@ -57,250 +56,149 @@
                 </div>
             </div>
         </div>
-
-        <div id="mobile-menu" class="hidden md:hidden bg-white border-b border-gray-100 absolute w-full">
-            <div class="px-4 pt-2 pb-6 space-y-2">
-                <a href="#about" class="block px-3 py-2 rounded-md text-base font-bold text-gray-700 hover:bg-gray-50">About</a>
-                <a href="#guests" class="block px-3 py-2 rounded-md text-base font-bold text-gray-700 hover:bg-gray-50">Guests</a>
-                <a href="#gallery" class="block px-3 py-2 rounded-md text-base font-bold text-gray-700 hover:bg-gray-50">Gallery</a>
-                <a href="login.html" class="block w-full text-center mt-4 px-5 py-3 bg-brand-primary text-white font-bold rounded-xl">Login / Register</a>
-            </div>
+        <div id="mobile-menu" class="hidden md:hidden bg-white border-b border-gray-100 absolute w-full px-4 pt-2 pb-6 space-y-2">
+            <a href="#about" class="block px-3 py-2 rounded-md text-base font-bold text-gray-700 hover:bg-gray-50">About</a>
+            <a href="#events" class="block px-3 py-2 rounded-md text-base font-bold text-gray-700 hover:bg-gray-50">Sports</a>
+            <div id="auth-button-mobile" class="mt-4"></div>
         </div>
     </nav>
 
     <section class="relative h-screen flex items-center justify-center overflow-hidden">
         <div class="absolute inset-0 z-0">
-            <img src="https://images.unsplash.com/photo-1517649763962-0c623066013b?q=80&w=2070&auto=format&fit=crop" class="w-full h-full object-cover">
+            <img src="MAIN_BANNER_URL" class="w-full h-full object-cover" alt="URJA 3.0 Banner">
             <div class="absolute inset-0 hero-gradient"></div>
         </div>
 
         <div class="relative z-10 text-center px-4 max-w-4xl mx-auto mt-16">
             <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white text-xs font-bold uppercase tracking-widest mb-6 animate-fade-in">
-                <span class="w-2 h-2 rounded-full bg-brand-secondary"></span> Coming January 2026
+                <span class="w-2 h-2 rounded-full bg-brand-primary animate-pulse"></span> 27th & 28th January 2026
             </div>
             
-            <h1 class="text-5xl md:text-7xl lg:text-8xl font-black italic text-white leading-none mb-6 tracking-tight">
-                UNLEASH THE <br> <span class="text-transparent bg-clip-text bg-gradient-to-r from-brand-secondary to-orange-500">CHAMPION</span> WITHIN
+            <h1 class="text-5xl md:text-7xl lg:text-8xl font-black italic text-white leading-none mb-6 tracking-tight uppercase">
+                Join the <br> <span class="text-transparent bg-clip-text bg-gradient-to-r from-brand-primary to-blue-400">Legacy of Champions</span>
             </h1>
             
             <p class="text-lg md:text-xl text-gray-200 font-medium mb-10 max-w-2xl mx-auto leading-relaxed">
-                Join the ultimate collegiate sports showdown. 3 Days. 15+ Sports. One Grand Trophy. Are you ready to make history?
+                The flagship annual sports festival of Department of Physical Education and Sports, B.K. Birla College, Kalyan.
             </p>
 
-            <div class="flex flex-col sm:flex-row gap-4 justify-center items-center">
-                <a href="login.html" class="px-8 py-4 bg-brand-primary text-white font-bold rounded-2xl shadow-xl shadow-indigo-900/50 hover:bg-indigo-600 transition-all hover:scale-105 w-full sm:w-auto">
-                    Start Registration
-                </a>
-                <a href="#about" class="px-8 py-4 bg-white/10 backdrop-blur-md border border-white/20 text-white font-bold rounded-2xl hover:bg-white/20 transition-all w-full sm:w-auto">
-                    Learn More
-                </a>
-            </div>
+            <div class="flex flex-col sm:flex-row gap-4 justify-center items-center" id="hero-actions">
+                </div>
         </div>
     </section>
 
-    <div class="bg-brand-dark py-12 border-b border-gray-200 bg-white relative z-20 -mt-10 mx-4 md:mx-auto max-w-5xl rounded-2xl shadow-xl flex flex-wrap justify-around items-center text-center gap-6">
-        <div>
-            <span class="block text-4xl md:text-5xl font-black text-brand-primary" id="days">00</span>
-            <span class="text-xs font-bold text-gray-400 uppercase tracking-widest">Days</span>
-        </div>
-        <div class="hidden md:block text-gray-300 text-3xl font-light">:</div>
-        <div>
-            <span class="block text-4xl md:text-5xl font-black text-gray-800" id="hours">00</span>
-            <span class="text-xs font-bold text-gray-400 uppercase tracking-widest">Hours</span>
-        </div>
-        <div class="hidden md:block text-gray-300 text-3xl font-light">:</div>
-        <div>
-            <span class="block text-4xl md:text-5xl font-black text-gray-800" id="minutes">00</span>
-            <span class="text-xs font-bold text-gray-400 uppercase tracking-widest">Minutes</span>
-        </div>
-        <div class="hidden md:block text-gray-300 text-3xl font-light">:</div>
-        <div>
-            <span class="block text-4xl md:text-5xl font-black text-gray-800" id="seconds">00</span>
-            <span class="text-xs font-bold text-gray-400 uppercase tracking-widest">Seconds</span>
-        </div>
-    </div>
-
-    <section id="about" class="py-20 px-4 max-w-7xl mx-auto">
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+    <section id="about" class="py-24 px-4 max-w-7xl mx-auto bg-white">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
             <div class="relative">
-                <div class="absolute -left-4 -top-4 w-24 h-24 bg-brand-secondary/10 rounded-full blur-xl"></div>
-                <img src="https://images.unsplash.com/photo-1526676037777-05a232554f77?q=80&w=2070&auto=format&fit=crop" class="rounded-3xl shadow-2xl relative z-10 rotate-2 hover:rotate-0 transition-transform duration-500">
+                <img src="PHYSICAL_EDU_LOGO_URL" class="w-full max-w-md mx-auto relative z-10 drop-shadow-2xl" alt="URJA 3.0 Logo">
+                <div class="absolute inset-0 bg-brand-primary/5 rounded-full blur-3xl -z-10"></div>
             </div>
             <div>
-                <span class="text-brand-primary font-bold tracking-widest uppercase text-sm mb-2 block">About The Event</span>
-                <h2 class="text-4xl md:text-5xl font-black italic mb-6 text-gray-900">MORE THAN JUST <br> A GAME.</h2>
-                <p class="text-gray-500 leading-relaxed mb-6">
-                    URJA is our annual college sports festival dedicated to celebrating athleticism, teamwork, and the spirit of competition. Since its inception, URJA has grown to become a platform where students showcase their talent in over 15+ different sports categories.
+                <span class="text-brand-primary font-extrabold tracking-widest uppercase text-sm mb-2 block">Our Legacy</span>
+                <h2 class="text-4xl md:text-5xl font-black italic mb-6 text-gray-900 uppercase leading-tight">About URJA 3.0</h2>
+                <p class="text-gray-600 leading-relaxed mb-6 text-lg">
+                    URJA 3.0 is a flagship annual sports festival hosted by the Department of Physical Education and Sports of B.K. Birla College, Kalyan. The fest brings together students to participate in a variety of competitive and recreational sports events, promoting physical fitness, discipline, leadership, and unity.
                 </p>
-                <div class="grid grid-cols-2 gap-6 mb-8">
-                    <div>
-                        <h4 class="text-3xl font-black text-brand-primary">15+</h4>
-                        <p class="text-sm font-bold text-gray-400">Sports Events</p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                        <i data-lucide="trophy" class="w-6 h-6 text-brand-primary mb-2"></i>
+                        <h4 class="font-black text-gray-900 uppercase text-xs">12+ Games</h4>
+                        <p class="text-[11px] text-gray-500">Individual, Team & E-Sports categories.</p>
                     </div>
-                    <div>
-                        <h4 class="text-3xl font-black text-brand-primary">500+</h4>
-                        <p class="text-sm font-bold text-gray-400">Participants</p>
-                    </div>
-                    <div>
-                        <h4 class="text-3xl font-black text-brand-primary">₹50K</h4>
-                        <p class="text-sm font-bold text-gray-400">Prize Pool</p>
-                    </div>
-                    <div>
-                        <h4 class="text-3xl font-black text-brand-primary">3</h4>
-                        <p class="text-sm font-bold text-gray-400">Days of Glory</p>
+                    <div class="bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                        <i data-lucide="map-pin" class="w-6 h-6 text-brand-primary mb-2"></i>
+                        <h4 class="font-black text-gray-900 uppercase text-xs">College Ground</h4>
+                        <p class="text-[11px] text-gray-500">Official venue for all outdoor activities.</p>
                     </div>
                 </div>
             </div>
         </div>
     </section>
 
-    <section id="guests" class="py-20 bg-gray-100">
-        <div class="max-w-7xl mx-auto px-4">
-            <div class="text-center mb-16">
-                <span class="text-brand-secondary font-bold tracking-widest uppercase text-sm mb-2 block">Honorable Mentions</span>
-                <h2 class="text-4xl font-black italic text-gray-900">MEET OUR CHIEF GUESTS</h2>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div class="bg-white p-6 rounded-3xl shadow-sm hover:shadow-xl transition-shadow text-center group">
-                    <div class="w-32 h-32 mx-auto rounded-full overflow-hidden mb-4 border-4 border-gray-100 group-hover:border-brand-primary transition-colors">
-                        <img src="https://images.unsplash.com/photo-1560250097-0b93528c311a?q=80&w=1000&auto=format&fit=crop" class="w-full h-full object-cover">
-                    </div>
-                    <h3 class="text-xl font-bold text-gray-900">Dr. Rajesh Kumar</h3>
-                    <p class="text-brand-primary font-bold text-xs uppercase tracking-wide mb-3">Principal</p>
-                    <p class="text-gray-400 text-sm">"Sports build character and community. I am proud to inaugurate URJA 2026."</p>
-                </div>
-
-                <div class="bg-white p-6 rounded-3xl shadow-sm hover:shadow-xl transition-shadow text-center group relative -top-8 border-b-4 border-brand-secondary">
-                    <div class="absolute -top-4 left-1/2 transform -translate-x-1/2 bg-brand-secondary text-white px-3 py-1 rounded-full text-[10px] font-bold uppercase">Guest of Honor</div>
-                    <div class="w-32 h-32 mx-auto rounded-full overflow-hidden mb-4 border-4 border-gray-100 group-hover:border-brand-secondary transition-colors">
-                        <img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=1000&auto=format&fit=crop" class="w-full h-full object-cover">
-                    </div>
-                    <h3 class="text-xl font-bold text-gray-900">Ms. Anita Deshmukh</h3>
-                    <p class="text-brand-secondary font-bold text-xs uppercase tracking-wide mb-3">National Athlete</p>
-                    <p class="text-gray-400 text-sm">Former Gold Medalist in 100m Sprint. An inspiration to all young athletes.</p>
-                </div>
-
-                <div class="bg-white p-6 rounded-3xl shadow-sm hover:shadow-xl transition-shadow text-center group">
-                    <div class="w-32 h-32 mx-auto rounded-full overflow-hidden mb-4 border-4 border-gray-100 group-hover:border-brand-primary transition-colors">
-                        <img src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?q=80&w=1000&auto=format&fit=crop" class="w-full h-full object-cover">
-                    </div>
-                    <h3 class="text-xl font-bold text-gray-900">Mr. Vikram Singh</h3>
-                    <p class="text-brand-primary font-bold text-xs uppercase tracking-wide mb-3">Sports Director</p>
-                    <p class="text-gray-400 text-sm">Organizing head ensuring fair play and top-tier management for the event.</p>
-                </div>
+    <section id="partnership" class="py-24 bg-gray-50 border-y border-gray-100">
+        <div class="max-w-5xl mx-auto px-4 text-center">
+            <span class="text-brand-secondary font-extrabold tracking-widest uppercase text-sm mb-6 block">Digital Excellence Partner</span>
+            <img src="ECO_CAMPUS_LOGO_URL" class="h-28 mx-auto mb-8 drop-shadow-lg" alt="Eco Campus Logo">
+            <h2 class="text-3xl md:text-4xl font-black text-gray-900 mb-6 uppercase italic">Eco Campus Initiative</h2>
+            <p class="text-gray-600 text-lg leading-relaxed max-w-3xl mx-auto mb-10">
+                Eco Campus is a student-driven initiative committed to sustainability, innovation, and responsible development through digital excellence. As the <strong>Official Digital Partner</strong>, Eco Campus manages live updates, technical support, and the event’s digital footprint to ensure seamless communication across campus.
+            </p>
+            <div class="flex flex-wrap justify-center gap-6">
+                <span class="px-6 py-2 bg-white rounded-full text-xs font-bold shadow-sm border border-gray-200">Live Scoring Support</span>
+                <span class="px-6 py-2 bg-white rounded-full text-xs font-bold shadow-sm border border-gray-200">Digital Promotions</span>
+                <span class="px-6 py-2 bg-white rounded-full text-xs font-bold shadow-sm border border-gray-200">Sustainable Practices</span>
             </div>
         </div>
     </section>
 
-    <section id="gallery" class="py-20 px-4 max-w-7xl mx-auto">
-        <div class="flex justify-between items-end mb-12">
-            <div>
-                <span class="text-brand-primary font-bold tracking-widest uppercase text-sm mb-2 block">Events</span>
-                <h2 class="text-4xl font-black italic text-gray-900">FEATURED SPORTS</h2>
-            </div>
-            <a href="login.html" class="hidden md:flex items-center gap-2 text-brand-primary font-bold hover:gap-3 transition-all">View All <i data-lucide="arrow-right" class="w-5 h-5"></i></a>
-        </div>
-
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 h-[500px]">
-            <div class="col-span-2 row-span-2 relative rounded-3xl overflow-hidden group cursor-pointer">
-                <img src="https://images.unsplash.com/photo-1531415074968-036ba1b575da?q=80&w=1000&auto=format&fit=crop" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700">
-                <div class="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors flex items-end p-8">
-                    <h3 class="text-2xl font-black italic text-white">CRICKET</h3>
-                </div>
-            </div>
-            <div class="col-span-1 row-span-1 relative rounded-3xl overflow-hidden group cursor-pointer">
-                <img src="https://images.unsplash.com/photo-1626224583764-847890e05851?q=80&w=1000&auto=format&fit=crop" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700">
-                <div class="absolute inset-0 bg-black/40 flex items-end p-4">
-                    <h3 class="text-lg font-black italic text-white">FOOTBALL</h3>
-                </div>
-            </div>
-            <div class="col-span-1 row-span-1 relative rounded-3xl overflow-hidden group cursor-pointer">
-                <img src="https://images.unsplash.com/photo-1519861531473-92002639313cc?q=80&w=1000&auto=format&fit=crop" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700">
-                <div class="absolute inset-0 bg-black/40 flex items-end p-4">
-                    <h3 class="text-lg font-black italic text-white">BASKETBALL</h3>
-                </div>
-            </div>
-            <div class="col-span-2 row-span-1 relative rounded-3xl overflow-hidden group cursor-pointer">
-                <img src="https://images.unsplash.com/photo-1552674605-db6ffd4facb5?q=80&w=1000&auto=format&fit=crop" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700">
-                <div class="absolute inset-0 bg-black/40 flex items-end p-6">
-                    <h3 class="text-xl font-black italic text-white">TRACK & FIELD</h3>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <footer class="bg-gray-900 text-white py-12 border-t border-gray-800">
-        <div class="max-w-7xl mx-auto px-4 grid grid-cols-1 md:grid-cols-4 gap-8">
+    <footer class="bg-gray-900 text-white py-16">
+        <div class="max-w-7xl mx-auto px-4 grid grid-cols-1 md:grid-cols-4 gap-12">
             <div class="col-span-1 md:col-span-2">
-                <div class="flex items-center gap-2 mb-4">
-                    <i data-lucide="flame" class="w-6 h-6 text-brand-primary"></i>
-                    <span class="text-2xl font-black italic tracking-tighter">URJA <span class="text-brand-primary">2026</span></span>
+                <div class="flex items-center gap-2 mb-6 uppercase font-black italic text-2xl tracking-tighter">
+                    URJA <span class="text-brand-primary">3.0</span>
                 </div>
-                <p class="text-gray-400 text-sm max-w-xs mb-6">
-                    Empowering students through sports, fostering team spirit, and creating memories that last a lifetime.
+                <p class="text-gray-400 text-sm leading-relaxed max-w-md mb-8">
+                    Organized by B.K. Birla College of Arts, Science & Commerce (Autonomous), Kalyan. Empowering students through fitness and the competitive spirit.
                 </p>
                 <div class="flex gap-4">
-                    <a href="#" class="p-2 bg-gray-800 rounded-lg hover:bg-brand-primary transition-colors"><i data-lucide="instagram" class="w-5 h-5"></i></a>
-                    <a href="#" class="p-2 bg-gray-800 rounded-lg hover:bg-brand-primary transition-colors"><i data-lucide="twitter" class="w-5 h-5"></i></a>
-                    <a href="#" class="p-2 bg-gray-800 rounded-lg hover:bg-brand-primary transition-colors"><i data-lucide="youtube" class="w-5 h-5"></i></a>
+                    <a href="#" class="p-3 bg-white/5 rounded-xl hover:bg-brand-primary transition-all text-gray-400 hover:text-white"><i data-lucide="instagram"></i></a>
+                    <a href="#" class="p-3 bg-white/5 rounded-xl hover:bg-brand-primary transition-all text-gray-400 hover:text-white"><i data-lucide="facebook"></i></a>
+                    <a href="#" class="p-3 bg-white/5 rounded-xl hover:bg-brand-primary transition-all text-gray-400 hover:text-white"><i data-lucide="twitter"></i></a>
                 </div>
             </div>
-            
             <div>
-                <h4 class="font-bold text-lg mb-4">Quick Links</h4>
-                <ul class="space-y-2 text-sm text-gray-400">
-                    <li><a href="#about" class="hover:text-white transition">About Us</a></li>
-                    <li><a href="#guests" class="hover:text-white transition">Guests</a></li>
+                <h4 class="font-black uppercase text-xs tracking-widest text-white mb-6">Contact Us</h4>
+                <ul class="space-y-3 text-sm text-gray-400 font-bold">
+                    <li class="flex items-center gap-2"><i data-lucide="mail" class="w-4 h-4 text-brand-primary"></i> sports@bkbirla.com</li>
+                    <li class="flex items-center gap-2"><i data-lucide="map-pin" class="w-4 h-4 text-brand-primary"></i> Main Ground, College Campus</li>
+                </ul>
+            </div>
+            <div>
+                <h4 class="font-black uppercase text-xs tracking-widest text-white mb-6">Student Links</h4>
+                <ul class="space-y-2 text-sm text-gray-400 font-bold">
                     <li><a href="login.html" class="hover:text-white transition">Student Login</a></li>
                     <li><a href="admin-login.html" class="hover:text-white transition">Admin Portal</a></li>
                 </ul>
             </div>
-
-            <div>
-                <h4 class="font-bold text-lg mb-4">Contact</h4>
-                <ul class="space-y-2 text-sm text-gray-400">
-                    <li class="flex items-center gap-2"><i data-lucide="map-pin" class="w-4 h-4"></i> College Campus, Main Ground</li>
-                    <li class="flex items-center gap-2"><i data-lucide="mail" class="w-4 h-4"></i> sports@urja2026.com</li>
-                    <li class="flex items-center gap-2"><i data-lucide="phone" class="w-4 h-4"></i> +91 98765 43210</li>
-                </ul>
-            </div>
         </div>
-        <div class="text-center pt-8 mt-8 border-t border-gray-800 text-xs text-gray-500">
-            &copy; 2026 URJA Sports Committee. All rights reserved.
+        <div class="text-center pt-8 mt-12 border-t border-white/5 text-[10px] text-gray-500 uppercase tracking-widest">
+            &copy; 2026 B.K. Birla College, Kalyan. Managed Digitally by Eco Campus Team.
         </div>
     </footer>
 
     <script>
+        const supabase = supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
         lucide.createIcons();
 
-        // COUNTDOWN LOGIC
-        // Set the date we're counting down to (Jan 20, 2026)
-        const countDownDate = new Date("Jan 20, 2026 09:00:00").getTime();
+        async function checkAuth() {
+            const { data: { session } } = await supabase.auth.getSession();
+            const desktopContainer = document.getElementById('auth-button-container');
+            const mobileContainer = document.getElementById('auth-button-mobile');
+            const heroActions = document.getElementById('hero-actions');
 
-        const x = setInterval(function() {
-            const now = new Date().getTime();
-            const distance = countDownDate - now;
-
-            // Time calculations
-            const days = Math.floor(distance / (1000 * 60 * 60 * 24));
-            const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-            const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-            const seconds = Math.floor((distance % (1000 * 60)) / 1000);
-
-            // Output the result
-            document.getElementById("days").innerHTML = days < 10 ? '0' + days : days;
-            document.getElementById("hours").innerHTML = hours < 10 ? '0' + hours : hours;
-            document.getElementById("minutes").innerHTML = minutes < 10 ? '0' + minutes : minutes;
-            document.getElementById("seconds").innerHTML = seconds < 10 ? '0' + seconds : seconds;
-
-            // If the count down is over
-            if (distance < 0) {
-                clearInterval(x);
-                document.getElementById("days").innerHTML = "00";
-                // Optionally show "LIVE NOW" text
+            if (session) {
+                const btnHtml = `
+                    <a href="student.html" class="px-6 py-2.5 bg-brand-primary text-white text-sm font-black rounded-xl shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2 uppercase tracking-tight">
+                        <i data-lucide="layout-grid" class="w-4 h-4"></i> Dashboard
+                    </a>`;
+                desktopContainer.innerHTML = btnHtml;
+                mobileContainer.innerHTML = btnHtml;
+                heroActions.innerHTML = `<a href="student.html" class="px-8 py-4 bg-brand-primary text-white font-black rounded-2xl shadow-xl hover:scale-105 transition-all w-full sm:w-auto uppercase">Go to Dashboard</a>`;
+            } else {
+                const btnHtml = `
+                    <a href="login.html" class="px-6 py-2.5 bg-brand-primary text-white text-sm font-black rounded-xl shadow-lg hover:bg-indigo-700 transition-all uppercase tracking-tight">
+                        Login / Register
+                    </a>`;
+                desktopContainer.innerHTML = btnHtml;
+                mobileContainer.innerHTML = btnHtml;
+                heroActions.innerHTML = `
+                    <a href="login.html" class="px-8 py-4 bg-brand-primary text-white font-black rounded-2xl shadow-xl hover:scale-105 transition-all w-full sm:w-auto uppercase">Register Now</a>
+                    <a href="#about" class="px-8 py-4 bg-white/10 backdrop-blur-md border border-white/20 text-white font-black rounded-2xl hover:bg-white/20 transition-all w-full sm:w-auto uppercase">Learn More</a>`;
             }
-        }, 1000);
+            lucide.createIcons();
+        }
+
+        document.addEventListener('DOMContentLoaded', checkAuth);
     </script>
 </body>
 </html>
