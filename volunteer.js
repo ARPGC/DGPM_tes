@@ -189,37 +189,70 @@
     }
 
     // --- PERFORMANCE UI ---
-    function generatePerformanceHTML(match) {
+   function generatePerformanceHTML(match) {
     const unit = match.sports?.unit || 'Result';
-    const listHtml = match.performance_data.map((p, idx) => `
-        <div class="flex items-center justify-between bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm mb-2">
-            <div class="flex items-center gap-3 overflow-hidden">
-                <div class="w-8 h-8 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center text-xs font-bold text-gray-500 dark:text-gray-400 shrink-0">${idx + 1}</div>
-                <div class="flex flex-col truncate">
-                    <span class="text-sm font-bold text-gray-900 dark:text-white truncate">${p.name.split('(')[0]}</span>
-                </div>
-            </div>
-            <div class="flex items-center gap-2">
-                <input type="text" 
-                    id="perf-input-${idx}" 
-                    value="${p.result || ''}" 
-                    placeholder="${unit}" 
-                    oninput="window.saveSingleResult('${match.id}', ${idx})"
-                    class="w-32 p-2 text-center bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg font-bold text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-primary">
-            </div>
-        </div>
-    `).join('');
-
+    
     return `
         <div class="max-w-md mx-auto pb-10">
             <div class="text-center mb-6">
                 <h3 class="text-xl font-black text-gray-900 dark:text-white">${match.team1_name}</h3>
                 <p class="text-xs text-brand-primary font-bold animate-pulse mt-1">Autosave Enabled</p>
             </div>
-            <div class="mb-6">${listHtml}</div>
+
+            <div class="relative mb-6">
+                <i data-lucide="search" class="absolute left-4 top-3 w-4 h-4 text-gray-400"></i>
+                <input type="text" id="student-search" onkeyup="window.filterStudents()" 
+                    placeholder="Search name or student ID..." 
+                    class="w-full pl-10 pr-4 py-3 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl text-sm font-bold shadow-sm outline-none focus:ring-2 focus:ring-brand-primary/20">
+            </div>
+            
+            <div id="performance-list" class="space-y-2">
+                ${renderStudentList(match.performance_data, match.id, unit)}
+            </div>
         </div>`;
 }
 
+    // Helper to render only the list items
+function renderStudentList(data, matchId, unit) {
+    if (!data || data.length === 0) return '<p class="text-center text-gray-400 py-4">No students found.</p>';
+    
+    return data.map((p, idx) => `
+        <div class="student-item flex items-center justify-between bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm" 
+             data-name="${p.name.toLowerCase()}" 
+             data-id="${(p.student_id || '').toLowerCase()}">
+            <div class="flex items-center gap-3 overflow-hidden">
+                <div class="w-8 h-8 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center text-xs font-bold text-gray-500 shrink-0">${idx + 1}</div>
+                <div class="flex flex-col truncate">
+                    <span class="text-sm font-bold text-gray-900 dark:text-white truncate">${p.name}</span>
+                    ${p.student_id ? `<span class="text-[10px] text-gray-400 font-mono">${p.student_id}</span>` : ''}
+                </div>
+            </div>
+            <input type="text" 
+                id="perf-input-${idx}" 
+                value="${p.result || ''}" 
+                placeholder="${unit}" 
+                oninput="window.saveSingleResult('${matchId}', ${idx})"
+                class="w-24 p-2 text-center bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg font-bold text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-primary">
+        </div>
+    `).join('');
+}
+
+// Logic to filter students by name or ID
+window.filterStudents = function() {
+    const query = document.getElementById('student-search').value.toLowerCase();
+    const items = document.querySelectorAll('.student-item');
+
+    items.forEach(item => {
+        const name = item.getAttribute('data-name');
+        const studentId = item.getAttribute('data-id');
+        
+        if (name.includes(query) || studentId.includes(query)) {
+            item.classList.remove('hidden');
+        } else {
+            item.classList.add('hidden');
+        }
+    });
+};
     // --- CRICKET UI ---
     function generateCricketHTML(match) {
         const d = match.score_details || { t1: {}, t2: {} };
