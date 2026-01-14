@@ -349,98 +349,62 @@ window.realtimeClient = window.supabase.createClient(CONFIG_REALTIME.url, CONFIG
         `}).join('');
     }
 
-    // --- 5. REALTIME SUBSCRIPTION (UPDATED) ---
-    // Replace your existing setupRealtimeSubscription function with this:
+// --- 5. REALTIME SUBSCRIPTION (FIXED & CONNECTED) ---
+    function setupRealtimeSubscription() {
+        if (window.liveSubscription) return; 
 
-// --- 5. REALTIME SUBSCRIPTION (CORRECTED) ---
-    // Replace the existing setupRealtimeSubscription function with this:
-
-function setupRealtimeSubscription() {
-    if (window.liveSubscription) return; 
-
-    // USE config2.js CLIENT (window.realtimeClient)
-    window.liveSubscription = window.realtimeClient
-        .channel('public:live_updates') 
-        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_matches' }, (payload) => {
-            console.log("⚡ Update from live_matches (Config2):", payload.new);
-            
-            // 1. Refresh the "Live Matches" Dashboard (Top of screen)
-            loadLiveMatches(); 
-
-            // 2. Refresh the "Schedule List" (The main list of cards)
-            // Even though this list loads from 'matches', we reload it 
-            // because you said the update signal comes from 'live_matches'.
-            if (typeof window.loadSchedule === 'function') {
-                window.loadSchedule();
-            }
-
-            // 3. Refresh the "Match View" (The Modal / Popup)
-            // We check if the modal is currently open.
-            const modal = document.getElementById('modal-match-details');
-            if (modal && !modal.classList.contains('hidden')) {
+        // Uses Config2 (Anonymous) to listen to LIVE_MATCHES
+        window.liveSubscription = window.realtimeClient
+            .channel('public:live_updates') 
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_matches' }, (payload) => {
+                console.log("⚡ Update from live_matches:", payload.new);
                 
-                // OPTION A: If 'live_matches' ID is the same as 'matches' ID (Standard):
-                if (window.currentOpenMatchId === payload.new.id) {
-                    window.openMatchDetails(window.currentOpenMatchId);
-                }
-                
-                // OPTION B: If you want to force refresh ANY open modal when live_matches updates:
-                // window.openMatchDetails(window.currentOpenMatchId);
-            }
+                // 1. Refresh Dashboard (Top)
+                loadLiveMatches(); 
 
-            // 4. Toast Notification for Completed Games
-            if (payload.new.status === 'Completed') {
-                loadLatestChampions();
-                showToast(`🏆 Result: ${payload.new.sport_name} finished!`);
-            }
-        })
-        .subscribe((status) => {
-            console.log("Realtime Connection Status (Config2):", status);
-        });
-}
-
-        // LISTENER 2: SCHEDULE & SCORES (Uses supabaseClient to fix Auth/RLS issues)
-        // This is the critical fix for your "100m Race" modal
-        supabaseClient
-            .channel('public:main_matches') 
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches' }, (payload) => {
-                console.log("✅ Score Update Received:", payload.new);
-                
-                // A. Refresh Schedule List
+                // 2. Refresh Schedule List (Main List)
                 if (typeof window.loadSchedule === 'function') {
                     window.loadSchedule();
                 }
 
-                // B. Refresh Modal (Instant Update)
+                // 3. Refresh Modal (Popup) if open
                 const modal = document.getElementById('modal-match-details');
-                if (modal && !modal.classList.contains('hidden') && window.currentOpenMatchId === payload.new.id) {
-                    window.openMatchDetails(payload.new.id);
+                if (modal && !modal.classList.contains('hidden')) {
+                    // Update if the open match ID matches the one that just updated
+                    if (window.currentOpenMatchId === payload.new.id) {
+                        window.openMatchDetails(window.currentOpenMatchId);
+                    }
+                }
+
+                if (payload.new.status === 'Completed') {
+                    loadLatestChampions();
+                    showToast(`🏆 Result: ${payload.new.sport_name} finished!`);
                 }
             })
             .subscribe((status) => {
-                console.log("Matches Listener Status:", status); // Check console to see 'SUBSCRIBED'
+                console.log("Realtime Status:", status);
             });
     }
-    // --- 6. SCHEDULE MODULE (SEARCH & FILTER FIXED) ---
-   window.filterSchedule = function(view) {
-    currentScheduleView = view;
 
-    const btnUp = document.getElementById('btn-schedule-upcoming');
-    const btnRes = document.getElementById('btn-schedule-results');
+    // --- 6. SCHEDULE MODULE ---
+    window.filterSchedule = function(view) {
+        currentScheduleView = view;
 
-    if (btnUp && btnRes) {
-        if (view === 'upcoming') {
-            btnUp.className = "flex-1 py-2.5 rounded-lg text-xs font-bold transition-all bg-white dark:bg-gray-700 shadow-sm text-brand-primary dark:text-white";
-            btnRes.className = "flex-1 py-2.5 rounded-lg text-xs font-bold transition-all text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200";
-        } else {
-            btnUp.className = "flex-1 py-2.5 rounded-lg text-xs font-bold transition-all text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200";
-            btnRes.className = "flex-1 py-2.5 rounded-lg text-xs font-bold transition-all bg-white dark:bg-gray-700 shadow-sm text-brand-primary dark:text-white";
+        const btnUp = document.getElementById('btn-schedule-upcoming');
+        const btnRes = document.getElementById('btn-schedule-results');
+
+        if (btnUp && btnRes) {
+            if (view === 'upcoming') {
+                btnUp.className = "flex-1 py-2.5 rounded-lg text-xs font-bold transition-all bg-white dark:bg-gray-700 shadow-sm text-brand-primary dark:text-white";
+                btnRes.className = "flex-1 py-2.5 rounded-lg text-xs font-bold transition-all text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200";
+            } else {
+                btnUp.className = "flex-1 py-2.5 rounded-lg text-xs font-bold transition-all text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200";
+                btnRes.className = "flex-1 py-2.5 rounded-lg text-xs font-bold transition-all bg-white dark:bg-gray-700 shadow-sm text-brand-primary dark:text-white";
+            }
         }
-    }
 
-    window.loadSchedule();
-}; // ✅ THIS LINE FIXES THE ERROR
-
+        window.loadSchedule();
+    };
 
     window.loadSchedule = async function() {
         const container = document.getElementById('schedule-list');
@@ -459,7 +423,7 @@ function setupRealtimeSubscription() {
             return;
         }
 
-        // 2. POPULATE SPORT FILTER (If empty)
+        // 2. POPULATE SPORT FILTER
         const filterSelect = document.getElementById('schedule-sport-filter');
         if (filterSelect && filterSelect.children.length <= 1) {
             const uniqueSports = [...new Set(matches.map(m => m.sports?.name || 'Unknown'))].sort();
@@ -467,29 +431,24 @@ function setupRealtimeSubscription() {
                 uniqueSports.map(s => `<option value="${s}">${s}</option>`).join('');
         }
 
-       // 3. APPLY FILTERS (View + Search + Sport)
+        // 3. APPLY FILTERS
         const searchText = document.getElementById('schedule-search')?.value?.toLowerCase() || '';
         const selectedSport = filterSelect?.value || '';
 
         let filteredMatches = matches.filter(m => {
-            // --- FIX: Exclude Admin Panel locations ---
-            if (m.location === 'Admin Panel') return false;
-
-            // A. View Filter
+            if (m.location === 'Admin Panel') return false; // Filter Admin Panel
+            
             const isViewMatch = currentScheduleView === 'upcoming' 
                 ? ['Upcoming', 'Scheduled', 'Live'].includes(m.status)
                 : m.status === 'Completed';
             
             if (!isViewMatch) return false;
 
-            // B. Text Search
             const sName = m.sports?.name?.toLowerCase() || '';
             const t1 = m.team1_name?.toLowerCase() || '';
             const t2 = m.team2_name?.toLowerCase() || '';
             
             const searchMatch = !searchText || sName.includes(searchText) || t1.includes(searchText) || t2.includes(searchText);
-
-            // C. Sport Category Filter
             const sportMatch = !selectedSport || m.sports?.name === selectedSport;
 
             return searchMatch && sportMatch;
@@ -503,7 +462,6 @@ function setupRealtimeSubscription() {
                 return new Date(a.start_time) - new Date(b.start_time);
             });
         } else {
-            // Results: Latest first
             filteredMatches.sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
         }
 
@@ -569,12 +527,15 @@ function setupRealtimeSubscription() {
             </div>`;
         }).join('');
         
-        lucide.createIcons();
-    }
+        if(window.lucide) lucide.createIcons();
+    } // <--- This closing brace was likely the missing one!
 
-    // --- MATCH DETAILS (UPDATED FOR CRICKET & PERFORMANCE) ---
+    // --- MATCH DETAILS ---
     window.openMatchDetails = async function(matchId) {
-window.currentOpenMatchId = matchId; // <--- ADD THIS LINE (Tracks the active match)        const { data: match } = await supabaseClient.from('matches').select('*, sports(name, is_performance, unit)').eq('id', matchId).single();
+        
+        window.currentOpenMatchId = matchId; // <--- TRACKING LINE ADDED
+
+        const { data: match } = await supabaseClient.from('matches').select('*, sports(name, is_performance, unit)').eq('id', matchId).single();
         if(!match) return;
 
         const isPerf = match.sports?.is_performance;
@@ -588,16 +549,12 @@ window.currentOpenMatchId = matchId; // <--- ADD THIS LINE (Tracks the active ma
 
         if (!isPerf) {
             document.getElementById('md-layout-team').classList.remove('hidden');
-            
-            // TEAM NAMES
             document.getElementById('md-t1-name').innerText = match.team1_name;
             document.getElementById('md-t2-name').innerText = match.team2_name;
             
-            // SCORES (With Cricket Logic)
             if (isCricket && match.score_details) {
                 const s1 = match.score_details.t1 || {};
                 const s2 = match.score_details.t2 || {};
-                
                 document.getElementById('md-t1-score').innerHTML = `<span class="text-2xl">${s1.runs || 0}/${s1.wickets || 0}</span><span class="text-xs block text-gray-400">(${s1.overs || 0} ov)</span>`;
                 document.getElementById('md-t2-score').innerHTML = `<span class="text-2xl">${s2.runs || 0}/${s2.wickets || 0}</span><span class="text-xs block text-gray-400">(${s2.overs || 0} ov)</span>`;
             } else {
@@ -610,7 +567,6 @@ window.currentOpenMatchId = matchId; // <--- ADD THIS LINE (Tracks the active ma
             loadSquadList(match.team1_id, 'md-list-t1');
             loadSquadList(match.team2_id, 'md-list-t2');
         } else {
-            // PERFORMANCE UI
             document.getElementById('md-layout-race').classList.remove('hidden');
             document.getElementById('md-race-metric-header').innerText = match.sports?.unit || 'Result';
 
@@ -622,12 +578,10 @@ window.currentOpenMatchId = matchId; // <--- ADD THIS LINE (Tracks the active ma
             if (!results || results.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="3" class="px-4 py-8 text-center text-gray-400 italic">No results available yet.</td></tr>';
             } else {
-                // Sort by result (numeric descending)
                 results.sort((a, b) => {
-                    if (a.rank && b.rank) return a.rank - b.rank; // If ranks assigned
+                    if (a.rank && b.rank) return a.rank - b.rank;
                     const valA = parseFloat(a.result) || 0;
                     const valB = parseFloat(b.result) || 0;
-                    
                     const isRace = match.sports?.name?.toLowerCase().includes('race');
                     if (isRace) return (valA === 0 ? 9999 : valA) - (valB === 0 ? 9999 : valB);
                     return valB - valA;
@@ -652,7 +606,6 @@ window.currentOpenMatchId = matchId; // <--- ADD THIS LINE (Tracks the active ma
 
         document.getElementById('modal-match-details').classList.remove('hidden');
     }
-
     async function loadSquadList(teamId, containerId) {
         const container = document.getElementById(containerId);
         container.innerHTML = '<p class="text-[10px] text-gray-400 italic">Loading...</p>';
