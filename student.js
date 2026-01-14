@@ -216,17 +216,21 @@ window.realtimeClient = window.supabase.createClient(CONFIG_REALTIME.url, CONFIG
     }
 
     // A. LIVE MATCHES (CRICKET & PERFORMANCE ENABLED)
+   // A. LIVE MATCHES (CRICKET & PERFORMANCE ENABLED)
     window.loadLiveMatches = async function() {
         const container = document.getElementById('live-matches-container');
         const list = document.getElementById('live-matches-list');
         
         if(!list) return;
 
-        const { data: matches } = await realtimeClient
+        const { data: rawMatches } = await realtimeClient
             .from('live_matches')
             .select('*')
             .eq('status', 'Live')
             .order('updated_at', { ascending: false });
+
+        // --- FIX: Filter out matches with location "Admin Panel" ---
+        const matches = rawMatches ? rawMatches.filter(m => m.location !== 'Admin Panel') : [];
 
         if (container) {
             if (!matches || matches.length === 0) {
@@ -240,6 +244,7 @@ window.realtimeClient = window.supabase.createClient(CONFIG_REALTIME.url, CONFIG
         }
         
         list.innerHTML = matches.map(m => {
+            // ... (Rest of the mapping code remains exactly the same) ...
             const isCricket = m.sport_name?.toLowerCase().includes('cricket');
             const isPerf = m.performance_data && Array.isArray(m.performance_data);
             
@@ -416,11 +421,14 @@ window.realtimeClient = window.supabase.createClient(CONFIG_REALTIME.url, CONFIG
                 uniqueSports.map(s => `<option value="${s}">${s}</option>`).join('');
         }
 
-        // 3. APPLY FILTERS (View + Search + Sport)
+       // 3. APPLY FILTERS (View + Search + Sport)
         const searchText = document.getElementById('schedule-search')?.value?.toLowerCase() || '';
         const selectedSport = filterSelect?.value || '';
 
         let filteredMatches = matches.filter(m => {
+            // --- FIX: Exclude Admin Panel locations ---
+            if (m.location === 'Admin Panel') return false;
+
             // A. View Filter
             const isViewMatch = currentScheduleView === 'upcoming' 
                 ? ['Upcoming', 'Scheduled', 'Live'].includes(m.status)
