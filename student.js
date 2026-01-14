@@ -350,45 +350,52 @@ window.realtimeClient = window.supabase.createClient(CONFIG_REALTIME.url, CONFIG
     }
 
     // --- 5. REALTIME SUBSCRIPTION (UPDATED) ---
-    function setupRealtimeSubscription() {
-        if (window.liveSubscription) return; 
+    // Replace your existing setupRealtimeSubscription function with this:
 
-        window.liveSubscription = window.realtimeClient
-            .channel('public:urja_updates') // Single channel for all updates
+function setupRealtimeSubscription() {
+    if (window.liveSubscription) return; 
+
+    window.liveSubscription = window.realtimeClient
+        .channel('public:urja_updates')
+        
+        // 1. Listen for LIVE MATCH changes (Top Dashboard)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_matches' }, (payload) => {
+            loadLiveMatches(); 
             
-            // 1. LISTENER FOR TOP DASHBOARD (Live Cards)
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_matches' }, (payload) => {
-                // Refresh Dashboard Cards
-                loadLiveMatches(); 
-                
-                // If a match details modal is open, update it live
-                const modal = document.getElementById('modal-match-details');
-                if (modal && !modal.classList.contains('hidden')) {
-                    // Only update if the open modal matches the updated game
-                    // (Optional check, but safe to just reload)
-                    window.openMatchDetails(payload.new.id);
-                }
+            // Also refresh modal if looking at this live match
+            const modal = document.getElementById('modal-match-details');
+            if (modal && !modal.classList.contains('hidden') && window.currentOpenMatchId === payload.new.id) {
+                window.openMatchDetails(payload.new.id);
+            }
 
-                if (payload.new.status === 'Completed') {
-                    loadLatestChampions();
-                    showToast(`🏆 Result: ${payload.new.sport_name} finished!`);
-                }
-            })
+            if (payload.new.status === 'Completed') {
+                loadLatestChampions();
+                showToast(`🏆 Result: ${payload.new.sport_name} finished!`);
+            }
+        })
 
-            // 2. NEW LISTENER FOR SCHEDULE LIST (All Scores)
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches' }, (payload) => {
-                console.log("Score Update Detected:", payload.new);
-                
-                // Trigger a reload of the schedule list.
-                // This fetches the latest data (including scores) and re-renders the cards.
-                if (typeof window.loadSchedule === 'function') {
-                    window.loadSchedule();
-                }
-            })
+        // 2. Listen for ALL MATCH changes (Schedule List & Detailed Views)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches' }, (payload) => {
+            console.log("Match Update Detected:", payload.new);
             
-            .subscribe();
-    }
+            // A. Refresh the Schedule List (The cards)
+            // This ensures the "100m Race" card in the list updates its status/winner instantly
+            if (typeof window.loadSchedule === 'function') {
+                window.loadSchedule();
+            }
 
+            // B. Refresh the Modal (The leaderboard view)
+            // This ensures the popup view updates while you are watching it
+            const modal = document.getElementById('modal-match-details');
+            
+            // Check if modal is open AND if it matches the updated game ID
+            if (modal && !modal.classList.contains('hidden') && window.currentOpenMatchId === payload.new.id) {
+                window.openMatchDetails(payload.new.id);
+            }
+        })
+        
+        .subscribe();
+}
     // --- 6. SCHEDULE MODULE (SEARCH & FILTER FIXED) ---
    window.filterSchedule = function(view) {
     currentScheduleView = view;
@@ -542,6 +549,7 @@ window.realtimeClient = window.supabase.createClient(CONFIG_REALTIME.url, CONFIG
 
     // --- MATCH DETAILS (UPDATED FOR CRICKET & PERFORMANCE) ---
     window.openMatchDetails = async function(matchId) {
+        window.currentOpenMatchId = matchId; // Saves the ID of the match currently on screen
         const { data: match } = await supabaseClient.from('matches').select('*, sports(name, is_performance, unit)').eq('id', matchId).single();
         if(!match) return;
 
