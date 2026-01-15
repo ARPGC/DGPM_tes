@@ -131,6 +131,7 @@ window.loadSportsList = async function() {
     const { data: sports } = await supabaseClient.from('sports').select('*').order('name');
     const { data: activeMatches } = await supabaseClient.from('matches').select('sport_id, match_type, status').neq('status', 'Completed');
 
+    // Helper to check if a category is active
     const isActive = (id, category) => activeMatches?.some(m => m.sport_id === id && m.match_type?.includes(category));
 
     if(!sports || sports.length === 0) return;
@@ -152,6 +153,7 @@ window.loadSportsList = async function() {
                     <button onclick="window.openForceWinnerModal('${s.id}', '${s.name}', true)" class="p-1.5 bg-yellow-50 text-yellow-600 rounded border border-yellow-200"><i data-lucide="crown" class="w-3.5 h-3.5"></i></button>
                 </div>`;
         } else {
+            // Standard Sports: 4 Bracket System
             const categories = [
                 { id: 'Junior Boys', label: 'Jr Boys', color: 'blue' },
                 { id: 'Junior Girls', label: 'Jr Girls', color: 'pink' },
@@ -159,20 +161,20 @@ window.loadSportsList = async function() {
                 { id: 'Senior Girls', label: 'Sr Girls', color: 'purple' }
             ];
 
+            const btns = categories.map(cat => {
+                const active = isActive(s.id, cat.id);
+                // Map colors
+                const btnColor = cat.color === 'blue' ? 'bg-blue-600' : cat.color === 'pink' ? 'bg-pink-500' : cat.color === 'gray' ? 'bg-gray-800' : 'bg-purple-600';
+                
+                if (active) return `<div class="text-[9px] text-center font-bold text-green-600 bg-green-50 px-2 py-1 rounded border border-green-100">${cat.label}</div>`;
+                return `<button onclick="window.handleScheduleClick('${s.id}', '${s.name}', ${s.is_performance}, '${s.type}', '${cat.id}')" class="px-2 py-1 ${btnColor} text-white rounded text-[9px] font-bold shadow-sm hover:scale-105 transition-transform">${cat.label}</button>`;
+            }).join('');
+
             actionBtn = `
                 <div class="flex items-center gap-2 justify-end">
-                    <div class="grid grid-cols-2 gap-1.5">
-                        ${categories.map(cat => {
-                            const active = isActive(s.id, cat.id);
-                            const btnColor = cat.color === 'blue' ? 'bg-blue-600' : cat.color === 'pink' ? 'bg-pink-500' : cat.color === 'gray' ? 'bg-gray-800' : 'bg-purple-600';
-                            
-                            if (active) return `<div class="text-[9px] text-center font-bold text-green-600 bg-green-50 px-2 py-1 rounded border border-green-100">${cat.label} Active</div>`;
-                            return `<button onclick="window.handleScheduleClick('${s.id}', '${s.name}', ${s.is_performance}, '${s.type}', '${cat.id}')" class="px-2 py-1 ${btnColor} text-white rounded text-[9px] font-bold shadow-sm">${cat.label}</button>`;
-                        }).join('')}
-                    </div>
+                    <div class="grid grid-cols-2 gap-1.5">${btns}</div>
                     <button onclick="window.openForceWinnerModal('${s.id}', '${s.name}', false)" class="h-full ml-1 p-2 bg-yellow-50 text-yellow-600 rounded border border-yellow-200"><i data-lucide="crown" class="w-4 h-4"></i></button>
-                </div>
-            `;
+                </div>`;
         }
 
         const rowHtml = `
@@ -191,7 +193,7 @@ window.loadSportsList = async function() {
     lucide.createIcons();
 }
 
-// --- 9. SCHEDULER (FIXED: NO COMPLEX JOINS) ---
+// --- 9. SCHEDULER (FIXED: SAFE 3-STEP FETCH TO AVOID 400 ERROR) ---
 window.handleScheduleClick = async function(sportId, sportName, isPerformance, sportType, category) {
     if (isPerformance) {
         if (confirm(`Start ${sportName} - ${category}?`)) await initPerformanceEvent(sportId, sportName, category);
@@ -213,7 +215,7 @@ async function initPerformanceEvent(sportId, sportName, category) {
         if(isGlobal) return true;
         const u = r.users;
         const cls = (u.class_name || '').trim();
-        const gen = (u.gender || '').trim();
+        const gen = (u.gender || '').trim(); // Matches "Male" or "Female" from DB
 
         const isJuniorStudent = ['FYJC', 'SYJC'].includes(cls);
         const isMale = gen === 'Male';
@@ -253,6 +255,7 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
     const intSportId = parseInt(sportId); 
     const isESport = category === 'Global';
 
+    // 1. Check for active matches
     const { data: catMatches } = await supabaseClient.from('matches')
         .select('round_number, status, match_type')
         .eq('sport_id', intSportId)
@@ -264,13 +267,18 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
     let nextRound = 1, candidates = [];
 
     if (!catMatches || catMatches.length === 0) {
-        // --- ROUND 1 LOGIC (FIXED) ---
+        // --- ROUND 1 GENERATION ---
+        
+        // Ensure teams are prepped (Original Logic preserved)
         if (sportType === 'Individual') {
             await supabaseClient.rpc('prepare_individual_teams', { sport_id_input: intSportId });
         }
         await supabaseClient.rpc('auto_lock_tournament_teams', { sport_id_input: intSportId });
 
-        // 1. Fetch Teams (Safe, no join)
+        // --- SAFE DATA FETCHING (FIXES 400 ERROR) ---
+        // Instead of 1 complex query, we do 3 simple ones.
+        
+        // Step A: Get all locked teams for this sport
         const { data: allTeams } = await supabaseClient.from('teams')
             .select('id, name')
             .eq('sport_id', intSportId)
@@ -280,31 +288,33 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
             if (isESport) {
                 candidates = allTeams.map(t => ({ id: t.id, name: t.name }));
             } else {
-                // 2. Fetch Members (Manual Join)
+                // Step B: Get all members for these teams
                 const teamIds = allTeams.map(t => t.id);
+                // Warning: If >1000 teams, this might need pagination, but fine for college fest
                 const { data: allMembers } = await supabaseClient.from('team_members')
                     .select('team_id, user_id')
                     .in('team_id', teamIds);
-                
-                // 3. Fetch Users (Manual Join)
+
+                // Step C: Get user details for these members
                 const userIds = (allMembers || []).map(m => m.user_id);
                 const { data: allUsers } = await supabaseClient.from('users')
                     .select('id, class_name, gender')
                     .in('id', userIds);
 
-                // 4. Map & Filter
+                // Step D: Filter Teams in JavaScript (No Database Error possible)
                 candidates = allTeams.filter(t => {
-                    // Find members for this team
-                    const teamMembers = allMembers.filter(m => m.team_id === t.id);
-                    if (teamMembers.length === 0) return false;
+                    // 1. Find members of this specific team
+                    const members = allMembers.filter(m => m.team_id === t.id);
+                    if (members.length === 0) return false;
 
-                    // Check if EVERY member matches the criteria
-                    const isValidTeam = teamMembers.every(m => {
+                    // 2. Check if EVERY member matches the category criteria
+                    const isValidTeam = members.every(m => {
                         const user = allUsers.find(u => u.id === m.user_id);
                         if (!user) return false;
-                        
+
                         const cls = (user.class_name || '').trim();
                         const gen = (user.gender || '').trim();
+
                         const isJuniorStudent = ['FYJC', 'SYJC'].includes(cls);
                         const isMale = gen === 'Male';
                         const isFemale = gen === 'Female';
@@ -347,6 +357,7 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
 
     if (candidates.length < 2) return showToast(`No candidates for ${category} next round.`, "info");
 
+    // Generate Schedule
     tempSchedule = [];
     let matchType = candidates.length === 2 ? 'Final' : candidates.length <= 4 ? 'Semi-Final' : 'Regular';
     matchType += ` (${category})`;
@@ -535,7 +546,6 @@ function injectWinnerModal() {
     const div = document.createElement('div');
     div.id = 'modal-force-winner';
     div.className = 'hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in';
-    // Initial HTML only
     div.innerHTML = `
         <div class="bg-white p-6 rounded-[2rem] w-full max-w-sm shadow-2xl">
             <h3 class="font-black text-xl text-gray-900 mb-6">Declare Podium</h3>
