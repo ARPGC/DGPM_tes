@@ -260,6 +260,7 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
     const intSportId = parseInt(sportId); 
     const isESport = category === 'Global';
 
+    // Check for existing active matches
     const { data: catMatches } = await supabaseClient.from('matches')
         .select('round_number, status, match_type')
         .eq('sport_id', intSportId)
@@ -271,56 +272,68 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
     let nextRound = 1, candidates = [];
 
     if (!catMatches || catMatches.length === 0) {
-        // --- ROUND 1 GENERATION ---
+        // --- ROUND 1 LOGIC ---
         if (sportType === 'Individual') await supabaseClient.rpc('prepare_individual_teams', { sport_id_input: intSportId });
         await supabaseClient.rpc('auto_lock_tournament_teams', { sport_id_input: intSportId });
         
-        const { data: allTeams } = await supabaseClient.rpc('get_tournament_teams', { sport_id_input: intSportId });
+        const { data: allTeams, error: rpcError } = await supabaseClient.rpc('get_tournament_teams', { sport_id_input: intSportId });
+
+        if (rpcError) { console.error(rpcError); return showToast("DB Error", "error"); }
         
         if (allTeams) {
             if (isESport) {
                 candidates = allTeams.map(t => ({ id: t.team_id, name: t.team_name }));
             } else {
-                // IMPORTANT: 2-Step Filtering (Age THEN Gender)
+                // IMPORTANT: Filter by Age (Junior/Senior) AND Gender (Male/Female)
                 
-                // 1. Determine expected age group from Category string ("Junior Girls" -> "Junior")
-                const expectedAgeGroup = category.includes('Junior') ? 'Junior' : 'Senior';
-                const requiredGender = category.includes('Boys') ? 'Male' : 'Female';
+                // 1. Determine requirements
+                const requiredAge = category.toLowerCase().includes('junior') ? 'junior' : 'senior';
+                const requiredGender = category.toLowerCase().includes('boys') ? 'male' : 'female';
 
-                // 2. Filter teams by Age Group first (using DB category)
-                let potentialTeams = allTeams.filter(t => t.category === expectedAgeGroup);
+                console.log(`[DEBUG] Looking for Age: ${requiredAge}, Gender: ${requiredGender}`);
 
-                // 3. Fetch members to determine Team Gender
-                const teamIds = potentialTeams.map(t => t.team_id);
+                // 2. Filter teams by Age first
+                const ageFilteredTeams = allTeams.filter(t => (t.category || '').toLowerCase().trim() === requiredAge);
+                
+                // 3. Fetch genders for these teams
+                const teamIds = ageFilteredTeams.map(t => t.team_id);
                 
                 if (teamIds.length > 0) {
-                    const { data: members } = await supabaseClient
+                    // This query fetches members and their gender
+                    const { data: members, error: regError } = await supabaseClient
                         .from('registrations')
                         .select('team_id, users(gender)')
                         .in('team_id', teamIds);
 
-                    // Map TeamID -> Gender ('Male' or 'Female') based on first member found
+                    if (regError) {
+                        console.error("Gender Fetch Error:", regError);
+                        // Fallback: If query fails, assume filtering by Age is enough (rarely correct but prevents crash)
+                    }
+
+                    // Map TeamID -> Gender (Male/Female)
                     const teamGenderMap = {};
                     if(members) {
                         members.forEach(m => {
-                            if(!teamGenderMap[m.team_id] && m.users?.gender) {
-                                const g = m.users.gender.toLowerCase();
-                                // Normalize to 'Male'/'Female' for comparison
-                                teamGenderMap[m.team_id] = (g === 'male' || g === 'boy') ? 'Male' : 'Female';
-                            }
+                            if(!m.users) return;
+                            const g = (m.users.gender || '').toLowerCase();
+                            // Standardize gender string
+                            const stdG = (g === 'male' || g === 'boy' || g === 'm') ? 'male' : 'female';
+                            // Store first member's gender as team gender
+                            if (!teamGenderMap[m.team_id]) teamGenderMap[m.team_id] = stdG;
                         });
                     }
 
-                    // 4. Final Filter: Keep only teams matching the required gender
-                    candidates = potentialTeams.filter(t => {
-                        const detectedGender = teamGenderMap[t.team_id] || 'Male'; // Default to Male if unknown
+                    // 4. Final Filter: Keep only matching gender
+                    candidates = ageFilteredTeams.filter(t => {
+                        const detectedGender = teamGenderMap[t.team_id];
+                        // If no gender found, we skip, or default? Better to skip to be safe.
                         return detectedGender === requiredGender;
                     }).map(t => ({ id: t.team_id, name: t.team_name }));
                 }
             }
         }
     } else {
-        // --- NEXT ROUND LOGIC (Standard) ---
+        // --- NEXT ROUND LOGIC ---
         const lastRound = catMatches[0].round_number;
         nextRound = lastRound + 1;
         const { data: winners } = await supabaseClient.from('matches')
@@ -342,6 +355,8 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
         const { data: teamDetails } = await supabaseClient.from('teams').select('id, name').in('id', validWinnerIds);
         candidates = (teamDetails || []).map(t => ({ id: t.id, name: t.name }));
     }
+
+    console.log(`[DEBUG] Final Candidates for ${category}: ${candidates.length}`);
 
     if (candidates.length < 2) return showToast(`No candidates for ${category} next round.`, "info");
 
