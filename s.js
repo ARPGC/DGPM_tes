@@ -18,6 +18,10 @@ let currentView = 'dashboard';
 let tempSchedule = []; 
 let currentMatchViewFilter = 'Scheduled'; 
 
+let allTeamsCache = []; 
+let dataCache = []; 
+let allSportsCache = [];
+
 // --- 3. INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', async () => {
     if(window.lucide) lucide.createIcons();
@@ -131,8 +135,8 @@ window.loadSportsList = async function() {
     const { data: sports } = await supabaseClient.from('sports').select('*').order('name');
     const { data: activeMatches } = await supabaseClient.from('matches').select('sport_id, match_type, status').neq('status', 'Completed');
 
-    // Helper to check if a specific category is active
-    const isActive = (id, category) => activeMatches?.some(m => m.sport_id === id && m.match_type?.includes(category));
+    // Helper to check if a specific category is active (e.g., "Junior Boys")
+    const isActive = (id, cat) => activeMatches?.some(m => m.sport_id === id && m.match_type?.includes(cat));
 
     if(!sports || sports.length === 0) return;
 
@@ -141,46 +145,58 @@ window.loadSportsList = async function() {
 
     sports.forEach(s => {
         let actionBtn = '';
-        const isESport = s.name.toLowerCase().includes('bgmi') || s.name.toLowerCase().includes('free fire');
+        const isESport = s.name.toLowerCase().includes('bgmi') || s.name.toLowerCase().includes('free fire') || s.name.toLowerCase().includes('valorant');
+
+        // Helper to generate a single button/badge for a category
+        const generateBtn = (catLabel, catKey) => {
+            if(isActive(s.id, catKey)) {
+                return `<span class="text-[9px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded whitespace-nowrap">${catLabel} Live</span>`;
+            } else {
+                // Color coding: Boys (Blue/Indigo), Girls (Pink/Rose)
+                const btnColor = catLabel.includes('Boys') ? 'bg-blue-600' : 'bg-pink-600';
+                return `<button onclick="window.handleScheduleClick('${s.id}', '${s.name}', ${s.is_performance}, '${s.type}', '${catKey}')" 
+                        class="px-2 py-1.5 ${btnColor} text-white rounded text-[9px] font-bold shadow-sm hover:opacity-90 whitespace-nowrap">
+                        Start ${catLabel}
+                        </button>`;
+            }
+        };
 
         if (isESport) {
+            // E-Sports remains Global/Open
             const globalActive = isActive(s.id, 'Global');
             actionBtn = `
                 <div class="flex items-center gap-2 justify-end">
                     ${globalActive 
                         ? '<span class="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded">Active</span>' 
-                        : `<button onclick="window.handleScheduleClick('${s.id}', '${s.name}', ${s.is_performance}, '${s.type}', 'Global')" class="px-3 py-1.5 bg-indigo-600 text-white rounded text-[10px] font-bold shadow-sm">Start Global</button>`}
-                    <button onclick="window.openForceWinnerModal('${s.id}', '${s.name}', true)" class="p-1.5 bg-yellow-50 text-yellow-600 rounded border border-yellow-200"><i data-lucide="crown" class="w-3.5 h-3.5"></i></button>
+                        : `<button onclick="window.handleScheduleClick('${s.id}', '${s.name}', false, '${s.type}', 'Global')" class="px-3 py-1.5 bg-indigo-600 text-white rounded text-[10px] font-bold shadow-sm">Start Event</button>`}
+                    <button onclick="window.openForceWinnerModal('${s.id}', '${s.name}', true)" class="p-1.5 bg-yellow-50 text-yellow-600 rounded border border-yellow-200" title="Declare Winner"><i data-lucide="crown" class="w-3.5 h-3.5"></i></button>
                 </div>`;
         } else {
-            // Standard Sports: 4 Buttons for 4 Brackets
-            const categories = [
-                { id: 'Junior Boys', label: 'Jr Boys', color: 'blue' },
-                { id: 'Junior Girls', label: 'Jr Girls', color: 'pink' },
-                { id: 'Senior Boys', label: 'Sr Boys', color: 'gray' },
-                { id: 'Senior Girls', label: 'Sr Girls', color: 'purple' }
-            ];
-
-            const buttonsHtml = categories.map(cat => {
-                const active = isActive(s.id, cat.id);
-                const btnColor = cat.color === 'blue' ? 'bg-blue-600' : cat.color === 'pink' ? 'bg-pink-500' : cat.color === 'gray' ? 'bg-gray-800' : 'bg-purple-600';
-                
-                if (active) return `<div class="text-[9px] text-center font-bold text-green-600 bg-green-50 px-2 py-1 rounded border border-green-100">${cat.label}</div>`;
-                return `<button onclick="window.handleScheduleClick('${s.id}', '${s.name}', ${s.is_performance}, '${s.type}', '${cat.id}')" class="px-2 py-1 ${btnColor} text-white rounded text-[9px] font-bold shadow-sm hover:opacity-80">${cat.label}</button>`;
-            }).join('');
-
+            // Standard Sports: Jr Boys, Jr Girls, Sr Boys, Sr Girls
             actionBtn = `
-                <div class="flex items-center gap-2 justify-end">
-                    <div class="grid grid-cols-2 gap-1.5">${buttonsHtml}</div>
-                    <button onclick="window.openForceWinnerModal('${s.id}', '${s.name}', false)" class="h-full ml-1 p-2 bg-yellow-50 text-yellow-600 rounded border border-yellow-200"><i data-lucide="crown" class="w-4 h-4"></i></button>
-                </div>`;
+                <div class="flex flex-col gap-1 items-end">
+                    <div class="flex gap-1">
+                        ${generateBtn('Jr Boys', 'Junior Boys')}
+                        ${generateBtn('Jr Girls', 'Junior Girls')}
+                    </div>
+                    <div class="flex gap-1">
+                        ${generateBtn('Sr Boys', 'Senior Boys')}
+                        ${generateBtn('Sr Girls', 'Senior Girls')}
+                    </div>
+                </div>
+                <div class="ml-2 pl-2 border-l border-gray-100 flex items-center">
+                     <button onclick="window.openForceWinnerModal('${s.id}', '${s.name}', false)" class="p-1.5 bg-yellow-50 text-yellow-600 rounded border border-yellow-200" title="Declare Winner"><i data-lucide="crown" class="w-3.5 h-3.5"></i></button>
+                </div>
+            `;
+            // Wrap in a flex container for alignment
+            actionBtn = `<div class="flex items-center justify-end">${actionBtn}</div>`;
         }
 
         const rowHtml = `
         <tr class="border-b border-gray-50 hover:bg-gray-50 transition-colors">
             <td class="p-4 font-bold text-gray-800">${s.name}</td>
             <td class="p-4"><span class="px-2 py-1 rounded text-xs font-bold ${s.status === 'Open' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}">${s.status}</span></td>
-            <td class="p-4 text-right flex items-center justify-end gap-2">${actionBtn}</td>
+            <td class="p-4 text-right">${actionBtn}</td>
         </tr>`;
 
         if (s.is_performance) perfHtml += rowHtml;
@@ -192,44 +208,48 @@ window.loadSportsList = async function() {
     lucide.createIcons();
 }
 
-// --- 9. SCHEDULER (FIXED: SAFE 3-STEP FETCH) ---
+// --- 9. SCHEDULER ---
 window.handleScheduleClick = async function(sportId, sportName, isPerformance, sportType, category) {
+    // category will be 'Junior Boys', 'Junior Girls', 'Senior Boys', 'Senior Girls' or 'Global'
     if (isPerformance) {
-        if (confirm(`Start ${sportName} - ${category}?`)) await initPerformanceEvent(sportId, sportName, category);
+        if (confirm(`Start ${sportName} (${category})?`)) await initPerformanceEvent(sportId, sportName, category);
     } else {
         await initTournamentRound(sportId, sportName, sportType, category);
     }
 }
 
 async function initPerformanceEvent(sportId, sportName, category) {
-    // Fetch registrations (safe single table join)
+    // Fetch gender in addition to other fields
     const { data: regs } = await supabaseClient.from('registrations')
         .select('user_id, users(first_name, last_name, student_id, class_name, gender)')
         .eq('sport_id', sportId);
 
     if (!regs || regs.length === 0) return showToast("No registrations found.", "error");
 
-    const isGlobal = category === 'Global';
+    // Parse logic: Category is like "Junior Boys"
+    const isJunior = category.includes('Junior');
+    const isBoys = category.includes('Boys'); 
+    
+    // Filter by Age Group AND Gender
+    let participants = regs.filter(r => {
+        const className = r.users.class_name;
+        const gender = r.users.gender || ''; // Handle nulls safely
 
-    const participants = regs.filter(r => {
-        if(isGlobal) return true;
-        const u = r.users;
-        const cls = (u.class_name || '').trim();
-        const gen = (u.gender || '').trim();
+        const classMatch = isJunior ? ['FYJC', 'SYJC'].includes(className) : !['FYJC', 'SYJC'].includes(className);
+        
+        // Match gender. Assumes DB stores 'Male'/'Female'. 
+        // If DB stores 'Boy'/'Girl', adjust accordingly. 
+        // Using includes to be safe (e.g. 'Male' matches 'Boys' logic if mapped manually)
+        let genderMatch = true;
+        if (category !== 'Global') {
+             if (isBoys) genderMatch = (gender.toLowerCase() === 'male' || gender.toLowerCase() === 'boy');
+             else genderMatch = (gender.toLowerCase() === 'female' || gender.toLowerCase() === 'girl');
+        }
 
-        // Logic matched to your database image
-        const isJuniorStudent = ['FYJC', 'SYJC'].includes(cls);
-        const isMale = gen.toLowerCase() === 'male';
-        const isFemale = gen.toLowerCase() === 'female';
-
-        if (category === 'Junior Boys') return isJuniorStudent && isMale;
-        if (category === 'Junior Girls') return isJuniorStudent && isFemale;
-        if (category === 'Senior Boys') return !isJuniorStudent && isMale;
-        if (category === 'Senior Girls') return !isJuniorStudent && isFemale;
-        return false;
+        return classMatch && genderMatch;
     });
 
-    if (participants.length === 0) return showToast(`No participants found for ${category}.`, "error");
+    if (participants.length === 0) return showToast(`No ${category} participants found.`, "error");
 
     const pData = participants.map(r => ({
         id: r.user_id,
@@ -245,7 +265,7 @@ async function initPerformanceEvent(sportId, sportName, category) {
         status: 'Live',
         is_live: true,
         performance_data: pData,
-        match_type: `Performance (${category})` 
+        match_type: `Performance (${category})`
     }).select().single();
 
     if (error) showToast(error.message, "error");
@@ -256,11 +276,11 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
     const intSportId = parseInt(sportId); 
     const isESport = category === 'Global';
 
-    // Check for active matches
+    // Filter matches by the specific category string (e.g., "Junior Boys")
     const { data: catMatches } = await supabaseClient.from('matches')
         .select('round_number, status, match_type')
         .eq('sport_id', intSportId)
-        .ilike('match_type', `%${category}%`) 
+        .ilike('match_type', `%${category}%`)
         .order('round_number', { ascending: false });
 
     if (catMatches?.some(m => m.status !== 'Completed')) return showToast(`Finish active ${category} matches first!`, "error");
@@ -268,72 +288,31 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
     let nextRound = 1, candidates = [];
 
     if (!catMatches || catMatches.length === 0) {
-        // --- ROUND 1 GENERATION ---
-        if (sportType === 'Individual') {
-            await supabaseClient.rpc('prepare_individual_teams', { sport_id_input: intSportId });
-        }
+        // Round 1 Logic
+        if (sportType === 'Individual') await supabaseClient.rpc('prepare_individual_teams', { sport_id_input: intSportId });
         await supabaseClient.rpc('auto_lock_tournament_teams', { sport_id_input: intSportId });
-
-        // Step A: Get all locked teams for this sport
-        const { data: allTeams } = await supabaseClient.from('teams')
-            .select('id, name')
-            .eq('sport_id', intSportId)
-            .eq('is_locked', true);
-
-        if (allTeams && allTeams.length > 0) {
+        
+        // Fetch all teams
+        const { data: allTeams } = await supabaseClient.rpc('get_tournament_teams', { sport_id_input: intSportId });
+        
+        if (allTeams) {
             if (isESport) {
-                candidates = allTeams.map(t => ({ id: t.id, name: t.name }));
+                candidates = allTeams.map(t => ({ id: t.team_id, name: t.team_name }));
             } else {
-                // Step B: Get all members for these teams
-                const teamIds = allTeams.map(t => t.id);
-                // Batching isn't needed for small college fests (<500 teams)
-                const { data: allMembers } = await supabaseClient.from('team_members')
-                    .select('team_id, user_id')
-                    .in('team_id', teamIds);
-
-                // Step C: Get user details for these members
-                if (allMembers && allMembers.length > 0) {
-                    const userIds = allMembers.map(m => m.user_id);
-                    const { data: allUsers } = await supabaseClient.from('users')
-                        .select('id, class_name, gender')
-                        .in('id', userIds);
-
-                    // Step D: Filter Teams in JavaScript
-                    candidates = allTeams.filter(t => {
-                        // Find members of this specific team
-                        const members = allMembers.filter(m => m.team_id === t.id);
-                        if (members.length === 0) return false;
-
-                        // Check if EVERY member matches the category criteria
-                        const isValidTeam = members.every(m => {
-                            const user = allUsers.find(u => u.id === m.user_id);
-                            if (!user) return false;
-
-                            const cls = (user.class_name || '').trim();
-                            const gen = (user.gender || '').trim();
-                            
-                            // Check against database screenshot values
-                            const isJuniorStudent = ['FYJC', 'SYJC'].includes(cls);
-                            const isMale = gen.toLowerCase() === 'male';
-                            const isFemale = gen.toLowerCase() === 'female';
-
-                            if (category === 'Junior Boys') return isJuniorStudent && isMale;
-                            if (category === 'Junior Girls') return isJuniorStudent && isFemale;
-                            if (category === 'Senior Boys') return !isJuniorStudent && isMale;
-                            if (category === 'Senior Girls') return !isJuniorStudent && isFemale;
-                            return false;
-                        });
-                        
-                        return isValidTeam;
-                    }).map(t => ({ id: t.id, name: t.name }));
-                }
+                // IMPORTANT: Filter teams by category string (e.g. "Junior Boys")
+                // Assumption: The RPC/View returns a 'category' field matching registration logic 
+                // OR we rely on exact string matching if the DB stores "Junior Boys".
+                // If DB only stores "Junior", we might need to filter by member gender here, 
+                // but usually the 'Team Category' is set at creation.
+                candidates = allTeams
+                    .filter(t => t.category === category) 
+                    .map(t => ({ id: t.team_id, name: t.team_name }));
             }
         }
     } else {
-        // --- NEXT ROUND LOGIC ---
+        // Next Round Logic
         const lastRound = catMatches[0].round_number;
         nextRound = lastRound + 1;
-        
         const { data: winners } = await supabaseClient.from('matches')
             .select('winner_id')
             .eq('sport_id', intSportId)
@@ -346,7 +325,7 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
             .eq('sport_id', intSportId)
             .eq('round_number', nextRound)
             .ilike('match_type', `%${category}%`);
-            
+
         const scheduledIds = (alreadyScheduled || []).flatMap(m => [m.team1_id, m.team2_id]);
         
         const validWinnerIds = winners.map(w => w.winner_id).filter(id => !scheduledIds.includes(id));
@@ -419,19 +398,19 @@ window.openForceWinnerModal = async function(sportId, sportName, isESport) {
     
     const catContainer = document.getElementById('fw-category-container');
     if (catContainer) {
-        if (isESport) {
-            catContainer.style.display = 'none';
-        } else {
-            catContainer.style.display = 'block';
-            catContainer.innerHTML = `
-                <label class="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 block">Match Category</label>
-                <div class="grid grid-cols-2 gap-2">
-                    <label class="flex items-center gap-2 text-sm font-bold p-2 bg-gray-100 rounded-lg"><input type="radio" name="fw-cat" value="Junior Boys" checked class="accent-indigo-600"> Jr Boys</label>
-                    <label class="flex items-center gap-2 text-sm font-bold p-2 bg-gray-100 rounded-lg"><input type="radio" name="fw-cat" value="Junior Girls" class="accent-indigo-600"> Jr Girls</label>
-                    <label class="flex items-center gap-2 text-sm font-bold p-2 bg-gray-100 rounded-lg"><input type="radio" name="fw-cat" value="Senior Boys" class="accent-indigo-600"> Sr Boys</label>
-                    <label class="flex items-center gap-2 text-sm font-bold p-2 bg-gray-100 rounded-lg"><input type="radio" name="fw-cat" value="Senior Girls" class="accent-indigo-600"> Sr Girls</label>
-                </div>
-            `;
+        catContainer.style.display = isESport ? 'none' : 'block';
+        if (!isESport) {
+            // Inject expanded categories
+            const container = catContainer.querySelector('.cat-options');
+            if(container) {
+                 container.innerHTML = `
+                    <div class="grid grid-cols-2 gap-2">
+                        <label class="flex items-center gap-2 text-xs font-bold"><input type="radio" name="fw-cat" value="Junior Boys" checked class="accent-indigo-600"> Junior Boys</label>
+                        <label class="flex items-center gap-2 text-xs font-bold"><input type="radio" name="fw-cat" value="Junior Girls" class="accent-indigo-600"> Junior Girls</label>
+                        <label class="flex items-center gap-2 text-xs font-bold"><input type="radio" name="fw-cat" value="Senior Boys" class="accent-indigo-600"> Senior Boys</label>
+                        <label class="flex items-center gap-2 text-xs font-bold"><input type="radio" name="fw-cat" value="Senior Girls" class="accent-indigo-600"> Senior Girls</label>
+                    </div>`;
+            }
         }
     }
     
@@ -443,7 +422,6 @@ async function confirmForceWinner(sportId, sportName, isESport) {
     const gId = document.getElementById('fw-gold').value;
     const sId = document.getElementById('fw-silver').value;
     const bId = document.getElementById('fw-bronze').value;
-    
     const cat = isESport ? 'Global' : document.querySelector('input[name="fw-cat"]:checked').value;
 
     if(!gId) return showToast("Select Gold winner.", "error");
@@ -547,7 +525,11 @@ function injectWinnerModal() {
     div.innerHTML = `
         <div class="bg-white p-6 rounded-[2rem] w-full max-w-sm shadow-2xl">
             <h3 class="font-black text-xl text-gray-900 mb-6">Declare Podium</h3>
-            <div id="fw-category-container" class="mb-6 bg-gray-50 p-4 rounded-2xl"></div>
+            <div id="fw-category-container" class="mb-6 bg-gray-50 p-4 rounded-2xl">
+                <label class="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 block">Match Category</label>
+                <div class="cat-options">
+                    </div>
+            </div>
             <div class="space-y-3">
                 <select id="fw-gold" class="w-full p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-sm font-bold outline-none"></select>
                 <select id="fw-silver" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none"></select>
