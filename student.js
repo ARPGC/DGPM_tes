@@ -840,24 +840,22 @@
     window.withdrawRegistration = async function(regId, sportId, sportType, sportName) {
         showConfirmDialog("Withdraw?", `Withdraw from ${sportName}?`, async () => {
             
-            // Check for Team Constraints
-            if (sportType === 'Team') {
-                const { data: membership } = await supabaseClient.from('team_members')
-                    .select('id, teams!inner(status)')
-                    .eq('user_id', currentUser.id)
-                    .eq('teams.sport_id', sportId)
-                    .single();
+            // Inside withdrawRegistration function
+if (sportType === 'Team') {
+    const { data: membership, error: memError } = await supabaseClient.from('team_members')
+        .select('id, teams!inner(status)')
+        .eq('user_id', currentUser.id)
+        .eq('teams.sport_id', sportId)
+        .maybeSingle(); // CHANGED FROM .single() to .maybeSingle()
 
-                // If user is in a team (membership exists)
-                if (membership) {
-                    if (membership.teams.status === 'Locked') {
-                        window.closeModal('modal-confirm');
-                        return showToast("Cannot withdraw! Team is LOCKED.", "error");
-                    }
-                    // If not locked, remove from team first
-                    await supabaseClient.from('team_members').delete().eq('id', membership.id);
-                }
-            }
+    if (membership) {
+        if (membership.teams.status === 'Locked') {
+            window.closeModal('modal-confirm');
+            return showToast("Cannot withdraw! Team is LOCKED.", "error");
+        }
+        await supabaseClient.from('team_members').delete().eq('id', membership.id);
+    }
+}
 
             // Proceed to delete registration
             const { error } = await supabaseClient.from('registrations').delete().eq('id', regId);
