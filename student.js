@@ -2,7 +2,7 @@
 // URJA 2026 - STUDENT PORTAL CONTROLLER
 // ==========================================
 
-(function() { // Wrapped in IIFE for safety
+(function() { // Wrapped in IIFE for safet
 
     // --- CONFIGURATION & CLIENTS ---
     if (typeof CONFIG === 'undefined' || typeof CONFIG_REALTIME === 'undefined') {
