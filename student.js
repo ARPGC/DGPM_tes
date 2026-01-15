@@ -836,12 +836,16 @@
             }
         });
     }
+window.withdrawRegistration = async function(regId, sportId, sportType, sportName) {
+        // Debugging: Log what we are trying to withdraw from
+        console.log("Attempting withdrawal:", { regId, sportId, sportType, sportName });
 
-   window.withdrawRegistration = async function(regId, sportId, sportType, sportName) {
         showConfirmDialog("Withdraw?", `Withdraw from ${sportName}?`, async () => {
             
             // 1. IF TEAM SPORT: Handle Team Membership First
-            if (sportType === 'Team') {
+            // We use toLowerCase() to ensure 'Team', 'team', or 'TEAM' all work
+            if (sportType && sportType.toLowerCase() === 'team') {
+                
                 // Fetch membership with Captain details
                 const { data: membership, error: memError } = await supabaseClient
                     .from('team_members')
@@ -852,10 +856,13 @@
 
                 if (memError) {
                     window.closeModal('modal-confirm');
-                    return showToast("Error checking team status: " + memError.message, "error");
+                    console.error("Membership Check Error:", memError);
+                    return showToast("DB Error: " + memError.message, "error");
                 }
 
                 if (membership) {
+                    console.log("User is in a team:", membership);
+
                     // CHECK 1: Is the team Locked?
                     if (membership.teams.status === 'Locked') {
                         window.closeModal('modal-confirm');
@@ -865,7 +872,7 @@
                     // CHECK 2: Is the user the Captain?
                     if (membership.teams.captain_id === currentUser.id) {
                         window.closeModal('modal-confirm');
-                        return showToast(`⚠️ You are the Captain of '${membership.teams.name}'. You must DELETE the team in 'My Teams' before withdrawing.`, "error");
+                        return showToast(`⚠️ Captains cannot withdraw. You must DELETE the team in 'My Teams' first.`, "error");
                     }
 
                     // Attempt to leave the team
@@ -876,7 +883,9 @@
 
                     if (leaveError) {
                         window.closeModal('modal-confirm');
-                        return showToast("Failed to leave team: " + leaveError.message, "error");
+                        console.error("Leave Team Error:", leaveError);
+                        // If this error is "Policy violated", it means RLS is missing for DELETE
+                        return showToast("Failed to leave team. Check RLS Policies.", "error");
                     }
                 }
             }
@@ -885,6 +894,7 @@
             const { error } = await supabaseClient.from('registrations').delete().eq('id', regId);
             
             if (error) {
+                console.error("Delete Registration Error:", error);
                 showToast("Withdrawal Failed: " + error.message, "error");
             } else {
                 showToast("Withdrawn Successfully", "success");
@@ -896,7 +906,7 @@
                 if(document.getElementById('history-list')) window.loadRegistrationHistory('history-list'); 
                 if(document.getElementById('my-registrations-list')) window.loadRegistrationHistory('my-registrations-list');
                 
-                // Refresh Sport Buttons (to show "Register" again)
+                // Refresh Sport Buttons
                 if(document.getElementById('sports-list') && document.getElementById('sports-list').children.length > 0) {
                     renderSportsList(allSportsList);
                 }
@@ -905,7 +915,6 @@
             }
         });
     }
-
     // --- REGISTRATION LOGIC ---
     window.toggleRegisterView = function(view) {
         document.getElementById('reg-section-new').classList.add('hidden');
