@@ -1,11 +1,10 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>URJA 3.0 | EcoCamus</title>
-        <link rel="icon" type="image/png" href="https://i.ibb.co/zWLqKLg4/Untitled-1.png">
+    <link rel="icon" type="image/png" href="https://i.ibb.co/zWLqKLg4/Untitled-1.png">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -37,7 +36,7 @@
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between items-center h-20">
                 <div class="flex-shrink-0 flex items-center gap-3">
-                    <img src="https://i.ibb.co/Pz6F3qnw/20260114-215925.jpg"" alt="B.K. Birla College" class="h-14 w-auto">
+                    <img src="https://i.ibb.co/Pz6F3qnw/20260114-215925.jpg" alt="B.K. Birla College" class="h-14 w-auto">
                     <div class="h-8 w-px bg-gray-200 hidden sm:block"></div>
                     <span class="text-2xl font-black italic tracking-tighter text-gray-900 uppercase">URJA <span class="text-brand-primary">3.0</span></span>
                 </div>
@@ -45,8 +44,7 @@
                 <div class="hidden md:flex items-center space-x-8">
                     <a href="#about" class="text-sm font-extrabold text-gray-500 hover:text-brand-primary transition">About</a>
                     <a href="#partnership" class="text-sm font-extrabold text-gray-500 hover:text-brand-primary transition">Partners</a>
-                    <div id="auth-button-container">
-                        </div>
+                    <div id="auth-button-container"></div>
                 </div>
 
                 <div class="md:hidden flex items-center">
@@ -62,28 +60,92 @@
         </div>
     </nav>
 
-    <section class="relative h-screen flex items-center justify-center overflow-hidden">
+    <section class="relative min-h-screen flex items-center justify-center overflow-hidden py-20">
         <div class="absolute inset-0 z-0">
             <img src="https://i.ibb.co/3yy6Sg4n/360-F-620799725-s-ZID7k-Al-K4f-Nnl-EYSCB0-OTgp-Pi-Nh-Vr-OP.jpg" class="w-full h-full object-cover" alt="URJA 3.0 Banner">
             <div class="absolute inset-0 hero-gradient"></div>
         </div>
 
-        <div class="relative z-10 text-center px-4 max-w-4xl mx-auto mt-16">
+        <div class="relative z-10 text-center px-4 max-w-5xl mx-auto mt-10">
             <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white text-xs font-bold uppercase tracking-widest mb-6">
                 <span class="w-2 h-2 rounded-full bg-brand-primary animate-pulse"></span> 27th & 28th January 2026
             </div>
             
-           <h1 class="text-5xl md:text-7xl lg:text-8xl font-black italic text-white leading-tight mb-6 tracking-tight uppercase">
-    Let's Join<br> 
-    <span class="inline-block text-transparent bg-clip-text bg-gradient-to-r from-brand-primary to-blue-400 pb-2 pr-2">The Legacy of Champions</span>
-</h1>
+            <h1 class="text-5xl md:text-7xl lg:text-8xl font-black italic text-white leading-tight mb-8 tracking-tight uppercase">
+                Let's Join<br> 
+                <span class="inline-block text-transparent bg-clip-text bg-gradient-to-r from-brand-primary to-blue-400 pb-2 pr-2">The Legacy of Champions</span>
+            </h1>
             
+            <div id="countdown-container" class="flex flex-wrap justify-center gap-4 mb-10">
+                <div class="flex flex-col items-center justify-center w-20 h-20 sm:w-24 sm:h-24 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl shadow-lg">
+                    <span id="days" class="text-2xl sm:text-4xl font-black text-white leading-none">00</span>
+                    <span class="text-[10px] uppercase tracking-widest text-gray-300 font-bold mt-1">Days</span>
+                </div>
+                <div class="flex flex-col items-center justify-center w-20 h-20 sm:w-24 sm:h-24 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl shadow-lg">
+                    <span id="hours" class="text-2xl sm:text-4xl font-black text-white leading-none">00</span>
+                    <span class="text-[10px] uppercase tracking-widest text-gray-300 font-bold mt-1">Hours</span>
+                </div>
+                <div class="flex flex-col items-center justify-center w-20 h-20 sm:w-24 sm:h-24 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl shadow-lg">
+                    <span id="minutes" class="text-2xl sm:text-4xl font-black text-white leading-none">00</span>
+                    <span class="text-[10px] uppercase tracking-widest text-gray-300 font-bold mt-1">Mins</span>
+                </div>
+                <div class="flex flex-col items-center justify-center w-20 h-20 sm:w-24 sm:h-24 bg-brand-primary/80 backdrop-blur-md border border-white/20 rounded-2xl shadow-lg">
+                    <span id="seconds" class="text-2xl sm:text-4xl font-black text-white leading-none">00</span>
+                    <span class="text-[10px] uppercase tracking-widest text-white/80 font-bold mt-1">Secs</span>
+                </div>
+            </div>
+
             <p class="text-lg md:text-xl text-gray-200 font-medium mb-10 max-w-2xl mx-auto leading-relaxed">
                 The flagship annual sports festival of Department of Physical Education and Sports, B.K. Birla College, Kalyan.
             </p>
 
             <div class="flex flex-col sm:flex-row gap-4 justify-center items-center" id="hero-actions">
+            </div>
+        </div>
+    </section>
+
+    <section id="about" class="py-24 bg-white relative overflow-hidden">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center max-w-3xl mx-auto mb-16">
+                <span class="text-brand-primary font-extrabold tracking-widest uppercase text-xs mb-3 block">The Organizers</span>
+                <h2 class="text-4xl md:text-5xl font-black italic text-gray-900 uppercase tracking-tight">Meet The Team</h2>
+                <div class="h-1 w-20 bg-brand-primary mx-auto mt-6 rounded-full"></div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+                <div class="group bg-white rounded-[2rem] p-8 shadow-xl border border-gray-100 flex flex-col items-center hover:-translate-y-2 hover:shadow-2xl transition-all duration-300">
+                    <div class="relative w-32 h-32 mb-6">
+                        <img src="https://i.ibb.co/Mhpw5w9/placeholder-user.jpg" alt="Physical Director" class="w-full h-full rounded-full object-cover border-4 border-white shadow-md ring-4 ring-brand-primary/30 ring-offset-2">
+                    </div>
+                    <h3 class="text-xl font-black text-gray-900 mb-1 text-center">Mr. Vikram Singh</h3>
+                    <p class="text-brand-primary text-[10px] font-extrabold uppercase tracking-widest mb-4">Physical Director</p>
+                    <p class="text-gray-500 text-xs font-medium leading-relaxed text-center">Organizing head ensuring fair play and top-tier management for the event.</p>
                 </div>
+                <div class="group bg-white rounded-[2rem] p-8 shadow-xl border border-gray-100 flex flex-col items-center hover:-translate-y-2 hover:shadow-2xl transition-all duration-300">
+                    <div class="relative w-32 h-32 mb-6">
+                        <img src="https://i.ibb.co/Mhpw5w9/placeholder-user.jpg" alt="Chairman" class="w-full h-full rounded-full object-cover border-4 border-white shadow-md ring-4 ring-brand-primary/30 ring-offset-2">
+                    </div>
+                    <h3 class="text-xl font-black text-gray-900 mb-1 text-center">Dr. Harish Dubey</h3>
+                    <p class="text-brand-primary text-[10px] font-extrabold uppercase tracking-widest mb-4 text-center">Chairman - PE & Sports</p>
+                    <p class="text-gray-500 text-xs font-medium leading-relaxed text-center">Leading the vision and strategic planning for the department's growth.</p>
+                </div>
+                <div class="group bg-white rounded-[2rem] p-8 shadow-xl border border-gray-100 flex flex-col items-center hover:-translate-y-2 hover:shadow-2xl transition-all duration-300">
+                    <div class="relative w-32 h-32 mb-6">
+                        <img src="https://i.ibb.co/Mhpw5w9/placeholder-user.jpg" alt="Professor Co-ordinator" class="w-full h-full rounded-full object-cover border-4 border-white shadow-md ring-4 ring-brand-primary/30 ring-offset-2">
+                    </div>
+                    <h3 class="text-xl font-black text-gray-900 mb-1 text-center">Prof. Anand Joshi</h3>
+                    <p class="text-brand-primary text-[10px] font-extrabold uppercase tracking-widest mb-4">Professor Co-ordinator</p>
+                    <p class="text-gray-500 text-xs font-medium leading-relaxed text-center">Bridging the gap between academic excellence and sporting achievements.</p>
+                </div>
+                <div class="group bg-white rounded-[2rem] p-8 shadow-xl border border-gray-100 flex flex-col items-center hover:-translate-y-2 hover:shadow-2xl transition-all duration-300">
+                    <div class="relative w-32 h-32 mb-6">
+                        <img src="https://i.ibb.co/Mhpw5w9/placeholder-user.jpg" alt="Digital Co-ordinator" class="w-full h-full rounded-full object-cover border-4 border-white shadow-md ring-4 ring-brand-primary/30 ring-offset-2">
+                    </div>
+                    <h3 class="text-xl font-black text-gray-900 mb-1 text-center">Student Name</h3>
+                    <p class="text-brand-primary text-[10px] font-extrabold uppercase tracking-widest mb-4">Digital Co-ordinator</p>
+                    <p class="text-gray-500 text-xs font-medium leading-relaxed text-center">Managing digital infrastructure, live scoring, and Eco Campus integration.</p>
+                </div>
+            </div>
         </div>
     </section>
 
@@ -119,24 +181,49 @@
             </div>
             
             <div>
-                <h4 class="font-black uppercase text-xs tracking-widest text-white mb-6">Contact Team</h4>
-                <ul class="space-y-4 text-sm text-gray-400 font-bold">
+                <h4 class="font-black uppercase text-xs tracking-widest text-white mb-8">Contact Team</h4>
+                <ul class="space-y-8">
                     <li>
-                        <p class="text-white text-xs uppercase tracking-tight">Aryan Choudhari (Vice President)</p>
-                        <a href="tel:+919321852543" class="flex items-center gap-2 hover:text-brand-primary transition"><i data-lucide="phone" class="w-4 h-4"></i> +91 93218 52543</a>
+                        <div class="mb-2">
+                            <p class="text-white text-sm font-black uppercase tracking-wide">Aryan Choudhari</p>
+                            <p class="text-brand-primary text-xs font-bold uppercase tracking-widest">Vice President</p>
+                        </div>
+                        <div class="space-y-2 mt-3">
+                            <a href="tel:+919321852543" class="flex items-center gap-3 text-gray-400 hover:text-white transition group">
+                                <i data-lucide="phone" class="w-4 h-4 text-brand-primary"></i> 
+                                <span class="text-sm font-medium">+91 93218 52543</span>
+                            </a>
+                            <a href="mailto:aryanchoudhari1430@gmail.com" class="flex items-center gap-3 text-gray-400 hover:text-white transition group">
+                                <i data-lucide="mail" class="w-4 h-4 text-brand-primary"></i> 
+                                <span class="text-sm font-medium break-all">aryanchoudhari1430@gmail.com</span>
+                            </a>
+                        </div>
                     </li>
+                    
                     <li>
-                        <p class="text-white text-xs uppercase tracking-tight">Aviraj Tayade (Joint Secretary)</p>
-                        <a href="tel:+918850574662" class="flex items-center gap-2 hover:text-brand-primary transition"><i data-lucide="phone" class="w-4 h-4"></i> +91 88505 74662</a>
+                        <div class="mb-2">
+                             <p class="text-white text-sm font-black uppercase tracking-wide">Aviraj Tayade</p>
+                            <p class="text-brand-primary text-xs font-bold uppercase tracking-widest">Joint Secretary</p>
+                        </div>
+                        <div class="space-y-2 mt-3">
+                            <a href="tel:+918850574662" class="flex items-center gap-3 text-gray-400 hover:text-white transition group">
+                                <i data-lucide="phone" class="w-4 h-4 text-brand-primary"></i> 
+                                <span class="text-sm font-medium">+91 88505 74662</span>
+                            </a>
+                            <a href="mailto:vidyanandtayade6@gmail.com" class="flex items-center gap-3 text-gray-400 hover:text-white transition group">
+                                <i data-lucide="mail" class="w-4 h-4 text-brand-primary"></i> 
+                                <span class="text-sm font-medium break-all">vidyanandtayade6@gmail.com</span>
+                            </a>
+                        </div>
                     </li>
                 </ul>
             </div>
 
             <div>
                 <h4 class="font-black uppercase text-xs tracking-widest text-white mb-6">Location</h4>
-                <p class="text-sm text-gray-400 font-bold flex items-start gap-2">
-                    <i data-lucide="map-pin" class="w-4 h-4 text-brand-primary shrink-0"></i>
-                    Main Ground, B.K. Birla College Campus, Kalyan West.
+                <p class="text-sm text-gray-400 font-bold flex items-start gap-2 leading-relaxed">
+                    <i data-lucide="map-pin" class="w-4 h-4 text-brand-primary shrink-0 mt-1"></i>
+                    Main Ground, B.K. Birla College Campus, Kalyan West, Maharashtra 421301.
                 </p>
             </div>
         </div>
@@ -146,12 +233,40 @@
     </footer>
 
     <script>
-    // Initialize the client with a unique name to avoid SyntaxError
     const supabaseClient = supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
-    lucide.createIcons();
+
+    // Function to run Timer
+    function startCountdown() {
+        // Using ISO date format "YYYY-MM-DD" is safer for cross-browser compatibility
+        const countDownDate = new Date("2026-01-27T10:00:00").getTime();
+
+        const timer = setInterval(function() {
+            const now = new Date().getTime();
+            const distance = countDownDate - now;
+
+            if (distance < 0) {
+                clearInterval(timer);
+                const container = document.getElementById("countdown-container");
+                if(container) {
+                     container.innerHTML = '<div class="px-8 py-4 bg-brand-primary text-white font-black rounded-xl uppercase tracking-widest text-xl">Event Started</div>';
+                }
+                return;
+            }
+
+            const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+            // Using try/catch or simple checks to ensure elements exist before setting
+            if(document.getElementById("days")) document.getElementById("days").innerHTML = days < 10 ? "0" + days : days;
+            if(document.getElementById("hours")) document.getElementById("hours").innerHTML = hours < 10 ? "0" + hours : hours;
+            if(document.getElementById("minutes")) document.getElementById("minutes").innerHTML = minutes < 10 ? "0" + minutes : minutes;
+            if(document.getElementById("seconds")) document.getElementById("seconds").innerHTML = seconds < 10 ? "0" + seconds : seconds;
+        }, 1000);
+    }
 
     async function checkAuth() {
-        // Use supabaseClient instead of supabase
         const { data: { session } } = await supabaseClient.auth.getSession();
         const desktopContainer = document.getElementById('auth-button-container');
         const mobileContainer = document.getElementById('auth-button-mobile');
@@ -159,19 +274,24 @@
 
         if (session) {
             const btnHtml = `<a href="student.html" class="px-6 py-2.5 bg-brand-primary text-white text-sm font-black rounded-xl shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2 uppercase tracking-tight"><i data-lucide="layout-grid" class="w-4 h-4"></i> Dashboard</a>`;
-            desktopContainer.innerHTML = btnHtml;
-            mobileContainer.innerHTML = btnHtml;
-            heroActions.innerHTML = `<a href="student.html" class="px-8 py-4 bg-brand-primary text-white font-black rounded-2xl shadow-xl hover:scale-105 transition-all w-full sm:w-auto uppercase">Go to Dashboard</a>`;
+            if(desktopContainer) desktopContainer.innerHTML = btnHtml;
+            if(mobileContainer) mobileContainer.innerHTML = btnHtml;
+            if(heroActions) heroActions.innerHTML = `<a href="student.html" class="px-8 py-4 bg-brand-primary text-white font-black rounded-2xl shadow-xl hover:scale-105 transition-all w-full sm:w-auto uppercase">Go to Dashboard</a>`;
         } else {
             const btnHtml = `<a href="login.html" class="px-6 py-2.5 bg-brand-primary text-white text-sm font-black rounded-xl shadow-lg hover:bg-indigo-700 transition-all uppercase tracking-tight">Login / Register</a>`;
-            desktopContainer.innerHTML = btnHtml;
-            mobileContainer.innerHTML = btnHtml;
-            heroActions.innerHTML = `<a href="login.html" class="px-8 py-4 bg-brand-primary text-white font-black rounded-2xl shadow-xl hover:scale-105 transition-all w-full sm:w-auto uppercase text-center">Start Registration</a>`;
+            if(desktopContainer) desktopContainer.innerHTML = btnHtml;
+            if(mobileContainer) mobileContainer.innerHTML = btnHtml;
+            if(heroActions) heroActions.innerHTML = `<a href="login.html" class="px-8 py-4 bg-brand-primary text-white font-black rounded-2xl shadow-xl hover:scale-105 transition-all w-full sm:w-auto uppercase text-center">Start Registration</a>`;
         }
         lucide.createIcons();
     }
 
-    document.addEventListener('DOMContentLoaded', checkAuth);
+    // MAIN INITIALIZATION - This ensures scripts run ONLY after HTML is ready
+    document.addEventListener('DOMContentLoaded', () => {
+        lucide.createIcons();
+        checkAuth();
+        startCountdown();
+    });
 </script>
 </body>
 </html>
