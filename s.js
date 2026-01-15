@@ -18,10 +18,6 @@ let currentView = 'dashboard';
 let tempSchedule = []; 
 let currentMatchViewFilter = 'Scheduled'; 
 
-let allTeamsCache = []; 
-let dataCache = []; 
-let allSportsCache = [];
-
 // --- 3. INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', async () => {
     if(window.lucide) lucide.createIcons();
@@ -135,7 +131,6 @@ window.loadSportsList = async function() {
     const { data: sports } = await supabaseClient.from('sports').select('*').order('name');
     const { data: activeMatches } = await supabaseClient.from('matches').select('sport_id, match_type, status').neq('status', 'Completed');
 
-    // Helper to check if a specific category is active (e.g., "Junior Boys")
     const isActive = (id, cat) => activeMatches?.some(m => m.sport_id === id && m.match_type?.includes(cat));
 
     if(!sports || sports.length === 0) return;
@@ -147,12 +142,10 @@ window.loadSportsList = async function() {
         let actionBtn = '';
         const isESport = s.name.toLowerCase().includes('bgmi') || s.name.toLowerCase().includes('free fire') || s.name.toLowerCase().includes('valorant');
 
-        // Helper to generate a single button/badge for a category
         const generateBtn = (catLabel, catKey) => {
             if(isActive(s.id, catKey)) {
                 return `<span class="text-[9px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded whitespace-nowrap">${catLabel} Live</span>`;
             } else {
-                // Color coding: Boys (Blue/Indigo), Girls (Pink/Rose)
                 const btnColor = catLabel.includes('Boys') ? 'bg-blue-600' : 'bg-pink-600';
                 return `<button onclick="window.handleScheduleClick('${s.id}', '${s.name}', ${s.is_performance}, '${s.type}', '${catKey}')" 
                         class="px-2 py-1.5 ${btnColor} text-white rounded text-[9px] font-bold shadow-sm hover:opacity-90 whitespace-nowrap">
@@ -162,7 +155,6 @@ window.loadSportsList = async function() {
         };
 
         if (isESport) {
-            // E-Sports remains Global/Open
             const globalActive = isActive(s.id, 'Global');
             actionBtn = `
                 <div class="flex items-center gap-2 justify-end">
@@ -172,7 +164,6 @@ window.loadSportsList = async function() {
                     <button onclick="window.openForceWinnerModal('${s.id}', '${s.name}', true)" class="p-1.5 bg-yellow-50 text-yellow-600 rounded border border-yellow-200" title="Declare Winner"><i data-lucide="crown" class="w-3.5 h-3.5"></i></button>
                 </div>`;
         } else {
-            // Standard Sports: Jr Boys, Jr Girls, Sr Boys, Sr Girls
             actionBtn = `
                 <div class="flex flex-col gap-1 items-end">
                     <div class="flex gap-1">
@@ -188,7 +179,6 @@ window.loadSportsList = async function() {
                      <button onclick="window.openForceWinnerModal('${s.id}', '${s.name}', false)" class="p-1.5 bg-yellow-50 text-yellow-600 rounded border border-yellow-200" title="Declare Winner"><i data-lucide="crown" class="w-3.5 h-3.5"></i></button>
                 </div>
             `;
-            // Wrap in a flex container for alignment
             actionBtn = `<div class="flex items-center justify-end">${actionBtn}</div>`;
         }
 
@@ -210,7 +200,6 @@ window.loadSportsList = async function() {
 
 // --- 9. SCHEDULER ---
 window.handleScheduleClick = async function(sportId, sportName, isPerformance, sportType, category) {
-    // category will be 'Junior Boys', 'Junior Girls', 'Senior Boys', 'Senior Girls' or 'Global'
     if (isPerformance) {
         if (confirm(`Start ${sportName} (${category})?`)) await initPerformanceEvent(sportId, sportName, category);
     } else {
@@ -219,29 +208,24 @@ window.handleScheduleClick = async function(sportId, sportName, isPerformance, s
 }
 
 async function initPerformanceEvent(sportId, sportName, category) {
-    // Fetch gender in addition to other fields
     const { data: regs } = await supabaseClient.from('registrations')
         .select('user_id, users(first_name, last_name, student_id, class_name, gender)')
         .eq('sport_id', sportId);
 
     if (!regs || regs.length === 0) return showToast("No registrations found.", "error");
 
-    // Parse logic: Category is like "Junior Boys"
     const isJunior = category.includes('Junior');
     const isBoys = category.includes('Boys'); 
     
-    // Filter by Age Group AND Gender
     let participants = regs.filter(r => {
         const className = r.users.class_name;
-        const gender = r.users.gender || ''; // Handle nulls safely
+        const gender = r.users.gender || ''; 
 
         const classMatch = isJunior ? ['FYJC', 'SYJC'].includes(className) : !['FYJC', 'SYJC'].includes(className);
         
-        // Match gender. Assumes DB stores 'Male'/'Female'. 
-        // If DB stores 'Boy'/'Girl', adjust accordingly. 
-        // Using includes to be safe (e.g. 'Male' matches 'Boys' logic if mapped manually)
         let genderMatch = true;
         if (category !== 'Global') {
+             // Flexible gender check
              if (isBoys) genderMatch = (gender.toLowerCase() === 'male' || gender.toLowerCase() === 'boy');
              else genderMatch = (gender.toLowerCase() === 'female' || gender.toLowerCase() === 'girl');
         }
@@ -272,78 +256,95 @@ async function initPerformanceEvent(sportId, sportName, category) {
     else { showToast(`${category} Event Started!`, "success"); syncToRealtime(newMatch.id); window.loadSportsList(); }
 }
 
-// REPLACE the existing initTournamentRound function in admin.js with this:
-
 async function initTournamentRound(sportId, sportName, sportType, category) {
-    const intSportId = parseInt(sportId);
-    console.log(`[DEBUG] Starting Round for: ${sportName}, Category: ${category}, Type: ${sportType}`);
+    const intSportId = parseInt(sportId); 
+    const isESport = category === 'Global';
 
-    // 1. Check for active matches
     const { data: catMatches } = await supabaseClient.from('matches')
         .select('round_number, status, match_type')
         .eq('sport_id', intSportId)
         .ilike('match_type', `%${category}%`)
         .order('round_number', { ascending: false });
 
-    if (catMatches?.some(m => m.status !== 'Completed')) {
-        return showToast(`Finish active ${category} matches first!`, "error");
-    }
+    if (catMatches?.some(m => m.status !== 'Completed')) return showToast(`Finish active ${category} matches first!`, "error");
 
     let nextRound = 1, candidates = [];
 
-    // 2. If no previous matches, fetch teams for Round 1
     if (!catMatches || catMatches.length === 0) {
-        console.log("[DEBUG] No previous matches found. Preparing Round 1...");
-
-        if (sportType === 'Individual') {
-            await supabaseClient.rpc('prepare_individual_teams', { sport_id_input: intSportId });
-        }
+        // --- ROUND 1 GENERATION ---
+        if (sportType === 'Individual') await supabaseClient.rpc('prepare_individual_teams', { sport_id_input: intSportId });
         await supabaseClient.rpc('auto_lock_tournament_teams', { sport_id_input: intSportId });
-
-        // Fetch all teams
-        const { data: allTeams, error } = await supabaseClient.rpc('get_tournament_teams', { sport_id_input: intSportId });
-
-        if (error) {
-            console.error("[DEBUG] Error fetching teams:", error);
-            return showToast("Error fetching teams", "error");
-        }
-
-        console.log("[DEBUG] All Teams fetched from DB:", allTeams);
-
+        
+        const { data: allTeams } = await supabaseClient.rpc('get_tournament_teams', { sport_id_input: intSportId });
+        
         if (allTeams) {
-            if (category === 'Global') {
+            if (isESport) {
                 candidates = allTeams.map(t => ({ id: t.team_id, name: t.team_name }));
             } else {
-                // --- CRITICAL FILTERING LOGIC ---
-                // We filter based on the 'category' field returned by the database view/function.
-                // If your database uses "Girls" but code expects "Junior Girls", this fails.
+                // IMPORTANT: 2-Step Filtering (Age THEN Gender)
                 
-                candidates = allTeams.filter(t => {
-                    // Check what the team category actually is
-                    const teamCat = t.category || ""; 
-                    const isMatch = teamCat.trim() === category.trim(); 
-                    
-                    if (!isMatch) console.log(`[DEBUG] Skipping Team: ${t.team_name} | Team Cat: '${teamCat}' != Required: '${category}'`);
-                    return isMatch;
-                }).map(t => ({ id: t.team_id, name: t.team_name }));
+                // 1. Determine expected age group from Category string ("Junior Girls" -> "Junior")
+                const expectedAgeGroup = category.includes('Junior') ? 'Junior' : 'Senior';
+                const requiredGender = category.includes('Boys') ? 'Male' : 'Female';
+
+                // 2. Filter teams by Age Group first (using DB category)
+                let potentialTeams = allTeams.filter(t => t.category === expectedAgeGroup);
+
+                // 3. Fetch members to determine Team Gender
+                const teamIds = potentialTeams.map(t => t.team_id);
+                
+                if (teamIds.length > 0) {
+                    const { data: members } = await supabaseClient
+                        .from('registrations')
+                        .select('team_id, users(gender)')
+                        .in('team_id', teamIds);
+
+                    // Map TeamID -> Gender ('Male' or 'Female') based on first member found
+                    const teamGenderMap = {};
+                    if(members) {
+                        members.forEach(m => {
+                            if(!teamGenderMap[m.team_id] && m.users?.gender) {
+                                const g = m.users.gender.toLowerCase();
+                                // Normalize to 'Male'/'Female' for comparison
+                                teamGenderMap[m.team_id] = (g === 'male' || g === 'boy') ? 'Male' : 'Female';
+                            }
+                        });
+                    }
+
+                    // 4. Final Filter: Keep only teams matching the required gender
+                    candidates = potentialTeams.filter(t => {
+                        const detectedGender = teamGenderMap[t.team_id] || 'Male'; // Default to Male if unknown
+                        return detectedGender === requiredGender;
+                    }).map(t => ({ id: t.team_id, name: t.team_name }));
+                }
             }
         }
-    } 
-    // ... (Rest of the next round logic remains the same)
-    else {
-         // Logic for Round 2+ (simplified for debugging Round 1)
-         console.log("[DEBUG] Found previous matches. Calculating Next Round...");
-         // ... existing logic for winners ...
+    } else {
+        // --- NEXT ROUND LOGIC (Standard) ---
+        const lastRound = catMatches[0].round_number;
+        nextRound = lastRound + 1;
+        const { data: winners } = await supabaseClient.from('matches')
+            .select('winner_id')
+            .eq('sport_id', intSportId)
+            .eq('round_number', lastRound)
+            .ilike('match_type', `%${category}%`)
+            .not('winner_id', 'is', null);
+        
+        const { data: alreadyScheduled } = await supabaseClient.from('matches')
+            .select('team1_id, team2_id')
+            .eq('sport_id', intSportId)
+            .eq('round_number', nextRound)
+            .ilike('match_type', `%${category}%`);
+
+        const scheduledIds = (alreadyScheduled || []).flatMap(m => [m.team1_id, m.team2_id]);
+        
+        const validWinnerIds = winners.map(w => w.winner_id).filter(id => !scheduledIds.includes(id));
+        const { data: teamDetails } = await supabaseClient.from('teams').select('id, name').in('id', validWinnerIds);
+        candidates = (teamDetails || []).map(t => ({ id: t.id, name: t.name }));
     }
 
-    console.log(`[DEBUG] Final Candidates Count: ${candidates.length}`);
+    if (candidates.length < 2) return showToast(`No candidates for ${category} next round.`, "info");
 
-    if (candidates.length < 2) {
-        console.warn("[DEBUG] Not enough candidates found.");
-        return showToast(`No candidates for ${category} next round.`, "info");
-    }
-
-    // ... (Rest of scheduling logic) ...
     tempSchedule = [];
     let matchType = candidates.length === 2 ? 'Final' : candidates.length <= 4 ? 'Semi-Final' : 'Regular';
     matchType += ` (${category})`;
@@ -358,6 +359,7 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
     }
     openSchedulePreviewModal(sportName, `${nextRound} (${category})`, tempSchedule, intSportId);
 }
+
 function openSchedulePreviewModal(sportName, roundLabel, schedule, sportId) {
     const titleEl = document.getElementById('preview-subtitle');
     const container = document.getElementById('schedule-preview-list');
@@ -408,7 +410,6 @@ window.openForceWinnerModal = async function(sportId, sportName, isESport) {
     if (catContainer) {
         catContainer.style.display = isESport ? 'none' : 'block';
         if (!isESport) {
-            // Inject expanded categories
             const container = catContainer.querySelector('.cat-options');
             if(container) {
                  container.innerHTML = `
