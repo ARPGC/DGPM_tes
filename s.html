@@ -17,7 +17,6 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="config.js"></script>
     <script src="config2.js"></script> 
-    
     <script src="s.js" defer></script>
 
     <script>
@@ -82,8 +81,17 @@
 
     <main class="flex-1 overflow-y-auto bg-gray-50 p-8 relative">
         
-        <div class="flex justify-between items-center mb-8">
+        <div class="flex justify-between items-center mb-8 text-center sm:text-left">
             <h2 id="page-title" class="text-3xl font-black text-gray-900 tracking-tight">Dashboard</h2>
+            
+            <div id="global-actions" class="hidden flex gap-2">
+                <button onclick="exportCurrentPage('excel')" class="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-all active:scale-95">
+                    <i data-lucide="sheet" class="w-4 h-4"></i> Excel
+                </button>
+                <button onclick="exportCurrentPage('pdf')" class="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-red-200 hover:bg-red-700 transition-all active:scale-95">
+                    <i data-lucide="file-text" class="w-4 h-4"></i> PDF
+                </button>
+            </div>
         </div>
 
         <div id="view-dashboard" class="view-section animate-fade-in">
@@ -114,35 +122,35 @@
         <div id="view-sports" class="view-section hidden animate-fade-in">
             <div class="space-y-6">
                 <div class="bg-white rounded-3xl shadow-sm border border-gray-200 p-6">
-                    <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><i data-lucide="trophy" class="w-5 h-5 text-brand-primary"></i> Tournaments & E-Sports</h3>
+                    <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><i data-lucide="trophy" class="w-5 h-5 text-brand-primary"></i> Tournaments</h3>
                     <div class="overflow-hidden rounded-xl border border-gray-100">
-                        <table class="w-full text-left">
-                            <tbody id="sports-table-tournament" class="text-sm"></tbody>
-                        </table>
+                        <table class="w-full"><tbody id="sports-table-tournament"></tbody></table>
                     </div>
                 </div>
                 <div class="bg-white rounded-3xl shadow-sm border border-gray-200 p-6">
                     <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><i data-lucide="timer" class="w-5 h-5 text-brand-primary"></i> Performance Events</h3>
                     <div class="overflow-hidden rounded-xl border border-gray-100">
-                        <table class="w-full text-left">
-                            <tbody id="sports-table-performance" class="text-sm"></tbody>
-                        </table>
+                        <table class="w-full"><tbody id="sports-table-performance"></tbody></table>
                     </div>
                 </div>
             </div>
         </div>
 
         <div id="view-matches" class="view-section hidden animate-fade-in">
-            <div id="matches-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                </div>
+            <div id="matches-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
         </div>
 
     </main>
 
-    <div id="toast-container" class="fixed bottom-10 left-1/2 transform -translate-x-1/2 z-[70] transition-all duration-300 opacity-0 pointer-events-none translate-y-10 w-11/12 max-w-sm"></div>
+    <div id="toast-container" class="fixed bottom-10 left-1/2 transform -translate-x-1/2 z-[70] transition-all duration-300 opacity-0 pointer-events-none translate-y-10 w-11/12 max-w-sm">
+        <div id="toast-content" class="bg-gray-900 text-white px-5 py-4 rounded-2xl shadow-2xl flex items-center gap-4 backdrop-blur-md border border-gray-700/50">
+            <div id="toast-icon"></div>
+            <p id="toast-msg" class="text-sm font-bold flex-1 tracking-wide"></p>
+        </div>
+    </div>
 
     <div id="modal-add-sport" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-        <div class="bg-white p-6 rounded-[2rem] w-full max-w-sm shadow-2xl relative">
+        <div class="bg-white p-6 rounded-3xl w-full max-w-sm shadow-2xl relative">
             <button onclick="closeModal('modal-add-sport')" class="absolute top-4 right-4 p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors">
                 <i data-lucide="x" class="w-4 h-4 text-gray-500"></i>
             </button>
@@ -166,6 +174,17 @@
                 <div>
                     <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wide ml-1 mb-1 block">Team Size</label>
                     <input type="number" id="new-sport-size" placeholder="1 for Individual" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-brand-primary transition-colors" required>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wide ml-1 mb-1 block">Jr Limit (Teams)</label>
+                        <input type="number" id="new-sport-limit-jr" placeholder="e.g. 16" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-brand-primary transition-colors">
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wide ml-1 mb-1 block">Sr Limit (Teams)</label>
+                        <input type="number" id="new-sport-limit-sr" placeholder="e.g. 32" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-brand-primary transition-colors">
+                    </div>
                 </div>
 
                 <button type="submit" class="w-full py-3.5 bg-black text-white font-bold rounded-xl shadow-lg active:scale-95 transition-transform mt-2 uppercase tracking-wide">Create Sport</button>
