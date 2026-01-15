@@ -1,6 +1,7 @@
 // ==========================================
 // URJA 2026 - STUDENT PORTAL CONTROLLER
 // ==========================================
+
 (function() { // Wrapped in IIFE for safety
 
     // --- CONFIGURATION & CLIENTS ---
@@ -8,7 +9,10 @@
         console.error("CRITICAL: Config missing. Ensure config.js and config2.js are loaded.");
     }
 
+    // 1. MAIN PROJECT (Auth, Teams, Registrations - Write Access)
     const supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
+
+    // 2. REALTIME PROJECT (Live Scores & Results - Read Only)
     const realtimeClient = window.supabase.createClient(CONFIG_REALTIME.url, CONFIG_REALTIME.anonKey);
 
     // --- STATE MANAGEMENT ---
@@ -17,7 +21,7 @@
     let currentScheduleView = 'upcoming'; 
     let allSportsList = [];
     let liveSubscription = null;
-    let selectedSportForReg = null; // FIXED: Added missing variable declaration
+    let selectedSportForReg = null; // FIXED: Variable was missing
 
     const DEFAULT_TEAM_SIZE = 5;
     const TOURNAMENT_CAP = 64; 
@@ -34,10 +38,12 @@
         
         await checkAuth();
         setupRealtimeSubscription();
+        
+        // Default Tab
         window.switchTab('dashboard');
     });
 
-    // --- THEME ---
+    // --- 1. THEME LOGIC ---
     function initTheme() {
         const savedTheme = localStorage.getItem('urja-theme');
         if (savedTheme === 'dark') {
@@ -67,13 +73,25 @@
         }
     }
 
-    // --- AUTH ---
+    // --- 2. AUTHENTICATION & PROFILE ---
     async function checkAuth() {
         const { data: { session } } = await supabaseClient.auth.getSession();
-        if (!session) { window.location.href = 'login.html'; return; }
         
-        const { data: profile } = await supabaseClient.from('users').select('*').eq('id', session.user.id).single();
-        if (!profile) { window.location.href = 'login.html'; return; }
+        if (!session) {
+            window.location.href = 'login.html';
+            return;
+        }
+        
+        const { data: profile, error } = await supabaseClient
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+
+        if (error || !profile) {
+            window.location.href = 'login.html';
+            return;
+        }
 
         currentUser = profile;
         updateProfileUI();
@@ -84,312 +102,56 @@
     function updateProfileUI() {
         if (!currentUser) return;
         const avatarUrl = currentUser.avatar_url || DEFAULT_AVATAR;
+        
         const headerImg = document.getElementById('header-avatar');
         if(headerImg) headerImg.src = avatarUrl;
 
         const imgEl = document.getElementById('profile-img');
+        const nameEl = document.getElementById('profile-name');
+        const nameDisplay = document.getElementById('profile-name-display');
+        const detailsEl = document.getElementById('profile-details');
+
         if(imgEl) imgEl.src = avatarUrl;
-        
-        document.getElementById('profile-name').innerText = `${currentUser.first_name} ${currentUser.last_name}`;
-        document.getElementById('profile-name-display').innerText = `${currentUser.first_name} ${currentUser.last_name}`;
-        document.getElementById('profile-details').innerText = `${currentUser.class_name || 'N/A'} • ${currentUser.student_id || 'N/A'}`;
+        if(nameEl) nameEl.innerText = `${currentUser.first_name} ${currentUser.last_name}`;
+        if(nameDisplay) nameDisplay.innerText = `${currentUser.first_name} ${currentUser.last_name}`;
+        if(detailsEl) detailsEl.innerText = `${currentUser.class_name || 'N/A'} • ${currentUser.student_id || 'N/A'}`;
     }
 
-    // --- WITHDRAW REGISTRATION LOGIC ---
-    window.withdrawRegistration = async function(regId, sportId, sportType, sportName) {
-        showConfirmDialog("Withdraw?", `Withdraw from ${sportName}?`, async () => {
-            
-            // Check for Team Constraints
-            if (sportType === 'Team') {
-                const { data: membership, error: memError } = await supabaseClient.from('team_members')
-                    .select('id, teams!inner(status)')
-                    .eq('user_id', currentUser.id)
-                    .eq('teams.sport_id', sportId)
-                    .single();
-
-                // If user is in a team (membership exists)
-                if (membership) {
-                    if (membership.teams.status === 'Locked') {
-                        window.closeModal('modal-confirm');
-                        return showToast("Cannot withdraw! Team is LOCKED.", "error");
-                    }
-                    // If not locked, remove from team first
-                    await supabaseClient.from('team_members').delete().eq('id', membership.id);
-                }
-            }
-
-            // Proceed to delete registration
-            const { error } = await supabaseClient.from('registrations').delete().eq('id', regId);
-            
-            if (error) {
-                showToast(error.message, "error");
-            } else {
-                showToast("Withdrawn Successfully", "success");
-                
-                // Update local state
-                myRegistrations = myRegistrations.filter(id => id != sportId);
-                
-                // Refresh lists
-                window.loadRegistrationHistory('history-list'); 
-                window.loadRegistrationHistory('my-registrations-list');
-                
-                // Refresh Sport Buttons (to show "Register" instead of "Registered")
-                if(document.getElementById('sports-list').children.length > 0) {
-                    renderSportsList(allSportsList);
-                }
-                
-                window.closeModal('modal-confirm');
-            }
-        });
-    }
-
-    // --- REGISTRATION LOGIC ---
-    window.openRegistrationModal = async function(id) {
-        const { data: sport } = await supabaseClient.from('sports').select('*').eq('id', id).single();
-        selectedSportForReg = sport; // Now safe to assign
-        
-        document.getElementById('reg-modal-sport-name').innerText = sport.name;
-        document.getElementById('reg-modal-user-name').innerText = `${currentUser.first_name} ${currentUser.last_name}`;
-        document.getElementById('reg-modal-user-details').innerText = `${currentUser.class_name || 'N/A'} • ${currentUser.student_id || 'N/A'}`;
-        document.getElementById('reg-mobile').value = currentUser.mobile || ''; 
-        document.getElementById('modal-register').classList.remove('hidden');
-    }
-
-    window.confirmRegistration = async function() {
-        const btn = document.querySelector('#modal-register button[onclick="confirmRegistration()"]');
-        const originalText = btn ? btn.innerText : 'Register';
-        if (btn) {
-            btn.disabled = true;
-            btn.innerText = "Registering...";
-        }
-
-        // FIXED: Replaced Prompt with Toast + Settings Redirect
-        if(!currentUser.mobile) {
-            showToast("⚠️ Mobile number required! Update in Profile.", "error");
-            
-            setTimeout(() => {
-                window.closeModal('modal-register');
-                window.openSettingsModal();
-            }, 1500);
-
-            if (btn) {
-                btn.disabled = false;
-                btn.innerText = originalText;
-            }
-            return;
-        }
-
-        const { error } = await supabaseClient.from('registrations').insert({
-            user_id: currentUser.id,
-            sport_id: selectedSportForReg.id
-        });
-
-        if(error) {
-            if (btn) {
-                btn.disabled = false;
-                btn.innerText = originalText;
-            }
-            showToast("Error: " + error.message, "error");
-        }
-        else {
-            if (!myRegistrations.includes(selectedSportForReg.id)) {
-                myRegistrations.push(selectedSportForReg.id);
-            }
-
-            showToast("Registration Successful!", "success");
-            window.closeModal('modal-register');
-            
-            if (btn) {
-                btn.disabled = false;
-                btn.innerText = originalText;
-            }
-
-            renderSportsList(allSportsList);
-        }
-    }
-
-    // --- STANDARD UTILS (Rest of the file logic) ---
-    async function fetchMyRegistrations() {
-        const { data } = await supabaseClient.from('registrations').select('sport_id').eq('user_id', currentUser.id);
-        if(data) myRegistrations = data.map(r => r.sport_id);
-    }
-
-    async function loadUserStats() {
-        const { count } = await supabaseClient.from('registrations').select('*', { count: 'exact', head: true }).eq('user_id', currentUser.id);
-        const statEl = document.getElementById('stat-matches-played');
-        if(statEl) statEl.innerText = count || 0;
-    }
-
-    window.loadRegistrationHistory = async function(containerId) {
-        const container = document.getElementById(containerId);
-        container.innerHTML = '<p class="text-center text-gray-400 py-10">Loading history...</p>';
-
-        const { data: regs } = await supabaseClient
-            .from('registrations')
-            .select(`id, created_at, player_status, sports (id, name, icon, type)`)
-            .eq('user_id', currentUser.id)
-            .order('created_at', { ascending: false });
-
-        if(!regs || regs.length === 0) {
-            container.innerHTML = '<p class="text-center text-gray-400 py-6">You haven\'t registered for any events yet.</p>';
-            return;
-        }
-
-        container.innerHTML = regs.map(r => `
-            <div class="flex items-center gap-4 bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm mb-2 group relative">
-                <div class="w-10 h-10 rounded-full bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center text-brand-primary dark:text-white shrink-0">
-                    <i data-lucide="${r.sports.icon || 'trophy'}" class="w-5 h-5"></i>
-                </div>
-                <div class="flex-1">
-                    <h4 class="font-bold text-sm text-gray-900 dark:text-white">${r.sports.name}</h4>
-                    <p class="text-xs text-gray-400 font-medium">${r.sports.type} • ${new Date(r.created_at).toLocaleDateString()}</p>
-                </div>
-                <button onclick="window.withdrawRegistration('${r.id}', '${r.sports.id}', '${r.sports.type}', '${r.sports.name}')" class="text-[10px] text-red-500 font-bold border border-red-100 dark:border-red-900 px-3 py-1 rounded-lg bg-red-50 dark:bg-red-900/20 hover:bg-red-100 transition-colors">
-                    Withdraw
-                </button>
-            </div>
-        `).join('');
-        lucide.createIcons();
-    }
-
-    // --- OTHER CORE FUNCTIONS (Sports, Teams, Profile) ---
-    // (Included essential parts to ensure file completeness)
-
-    window.loadSportsDirectory = async function() {
-        const container = document.getElementById('sports-list');
-        if(container.children.length > 0 && allSportsList.length > 0) return;
-        container.innerHTML = '<div class="col-span-2 text-center py-10"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary mx-auto"></div></div>';
-        const { data: sports } = await supabaseClient.from('sports').select('*').eq('status', 'Open').order('name');
-        allSportsList = sports || [];
-        renderSportsList(allSportsList);
-    }
-
-    function renderSportsList(list) {
-        const container = document.getElementById('sports-list');
-        if(!list || list.length === 0) {
-            container.innerHTML = '<p class="col-span-2 text-center text-gray-400">No sports found.</p>';
-            return;
-        }
-        container.innerHTML = list.map(s => {
-            const isReg = myRegistrations.includes(s.id);
-            const btnClass = isReg ? "bg-green-100 dark:bg-green-900/30 text-green-600 border border-green-200 cursor-not-allowed" : "bg-black dark:bg-white text-white dark:text-black shadow-lg hover:opacity-90";
-            return `
-            <div class="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm flex flex-col justify-between h-36 relative overflow-hidden">
-                <div class="relative z-10">
-                    <div class="w-8 h-8 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center mb-2 text-brand-primary dark:text-white"><i data-lucide="${s.icon || 'trophy'}" class="w-4 h-4"></i></div>
-                    <h4 class="font-bold text-md leading-tight text-gray-900 dark:text-white">${s.name}</h4>
-                    <p class="text-[10px] uppercase font-bold text-gray-400 mt-1">${s.type} Sport</p>
-                </div>
-                <button onclick="${isReg ? '' : `window.openRegistrationModal('${s.id}')`}" class="relative z-10 w-full py-2 rounded-lg text-xs font-bold transition-all ${btnClass}" ${isReg ? 'disabled' : ''}>
-                    ${isReg ? '<i data-lucide="check" class="w-3 h-3 inline mr-1"></i> Registered' : 'Register Now'}
-                </button>
-            </div>`;
-        }).join('');
-        lucide.createIcons();
-    }
-
-    // --- MODAL & TOAST UTILS ---
-    let confirmCallback = null;
-    function setupConfirmModal() {
-        if (!document.getElementById('btn-confirm-yes')) return;
-        document.getElementById('btn-confirm-yes').onclick = () => confirmCallback && confirmCallback();
-        document.getElementById('btn-confirm-cancel').onclick = () => { window.closeModal('modal-confirm'); confirmCallback = null; };
-    }
-
-    function showConfirmDialog(title, msg, onConfirm) {
-        if (!document.getElementById('modal-confirm')) return;
-        document.getElementById('confirm-title').innerText = title;
-        document.getElementById('confirm-msg').innerText = msg;
-        confirmCallback = onConfirm;
-        document.getElementById('modal-confirm').classList.remove('hidden');
-    }
-
-    window.closeModal = id => document.getElementById(id).classList.add('hidden');
-
-    window.showToast = function(msg, type='info') {
-        const t = document.getElementById('toast-container');
-        if (!t) return;
-        const msgEl = document.getElementById('toast-msg');
-        const iconEl = document.getElementById('toast-icon');
-        if (msgEl) msgEl.innerText = msg;
-        if (iconEl) {
-            iconEl.innerHTML = type === 'error' ? '<i data-lucide="alert-triangle" class="w-5 h-5 text-red-400"></i>' : '<i data-lucide="check-circle" class="w-5 h-5 text-green-400"></i>';
-        }
-        if (window.lucide) lucide.createIcons();
-        t.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-10');
-        setTimeout(() => { t.classList.add('opacity-0', 'pointer-events-none', 'translate-y-10'); }, 3000);
-    }
-
-    // --- SETUP PROFILE ---
-    window.openSettingsModal = function() {
-        document.getElementById('edit-fname').value = currentUser.first_name || '';
-        document.getElementById('edit-lname').value = currentUser.last_name || '';
-        document.getElementById('edit-email').value = currentUser.email || '';
-        document.getElementById('edit-mobile').value = currentUser.mobile || '';
-        document.getElementById('edit-class').value = currentUser.class_name || 'FY';
-        document.getElementById('edit-gender').value = currentUser.gender || 'Male';
-        document.getElementById('edit-sid').value = currentUser.student_id || '';
-        document.getElementById('modal-settings').classList.remove('hidden');
-    }
-
-    window.updateProfile = async function() {
-        const updates = {
-            first_name: document.getElementById('edit-fname').value,
-            last_name: document.getElementById('edit-lname').value,
-            mobile: document.getElementById('edit-mobile').value,
-            class_name: document.getElementById('edit-class').value,
-            student_id: document.getElementById('edit-sid').value,
-            gender: document.getElementById('edit-gender').value
-        };
-        const { error } = await supabaseClient.from('users').update(updates).eq('id', currentUser.id);
-        if(error) showToast("Error updating profile", "error");
-        else {
-            Object.assign(currentUser, updates);
-            updateProfileUI();
-            window.closeModal('modal-settings');
-            showToast("Profile Updated!", "success");
-        }
-    }
-
-    // --- IMAGE UPLOAD HELPER ---
+    // --- PROFILE IMAGE UPLOAD ---
     function setupImageUpload() {
         const input = document.getElementById('file-upload-input');
         const trigger = document.getElementById('profile-img-container'); 
+        
         if(trigger && input) {
             trigger.onclick = () => input.click();
             input.onchange = async (e) => {
                 const file = e.target.files[0];
                 if(!file) return;
+                
                 showToast("Uploading...", "info");
+                
                 const formData = new FormData();
                 formData.append('file', file);
                 formData.append('upload_preset', CONFIG.cloudinaryUploadPreset); 
+                
                 try {
-                    const res = await fetch(`https://api.cloudinary.com/v1_1/${CONFIG.cloudinaryCloudName}/image/upload`, { method: 'POST', body: formData });
+                    const res = await fetch(`https://api.cloudinary.com/v1_1/${CONFIG.cloudinaryCloudName}/image/upload`, {
+                        method: 'POST', body: formData
+                    });
                     const data = await res.json();
+                    
                     if(data.secure_url) {
                         await supabaseClient.from('users').update({ avatar_url: data.secure_url }).eq('id', currentUser.id);
                         currentUser.avatar_url = data.secure_url;
                         updateProfileUI();
-                        showToast("Photo Updated!", "success");
+                        showToast("Profile Photo Updated!", "success");
                     }
-                } catch(err) { showToast("Upload Failed", "error"); }
+                } catch(err) {
+                    showToast("Upload Failed", "error");
+                    console.error(err);
+                }
             };
         }
-    }
-
-    // --- TOAST CONTAINER INJECTION ---
-    function injectToastContainer() {
-        if(!document.getElementById('toast-container')) {
-            const div = document.createElement('div');
-            div.id = 'toast-container';
-            div.className = 'fixed bottom-24 left-1/2 transform -translate-x-1/2 z-[70] transition-all duration-300 opacity-0 pointer-events-none translate-y-10 w-11/12 max-w-sm';
-            div.innerHTML = `<div id="toast-content" class="bg-gray-900 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 backdrop-blur-md border border-gray-700/50"><div id="toast-icon"></div><p id="toast-msg" class="text-sm font-bold tracking-wide"></p></div>`;
-            document.body.appendChild(div);
-        }
-    }
-
-})(); // END IIFE
     }
 
     async function fetchMyRegistrations() {
@@ -446,13 +208,12 @@
 
     // --- 4. DASHBOARD (RESULTS ONLY) ---
     async function loadDashboard() {
-        loadLiveMatches();
+        window.loadLiveMatches(); // Fixed: Explicit window call
         loadLatestChampions();
     }
 
     // A. LIVE MATCHES (CRICKET & PERFORMANCE ENABLED)
-   // A. LIVE MATCHES (CRICKET & PERFORMANCE ENABLED)
-    window.loadLiveMatches = async function() {
+    window.loadLiveMatches = async function() { // Exposed to window
         const container = document.getElementById('live-matches-container');
         const list = document.getElementById('live-matches-list');
         
@@ -464,7 +225,6 @@
             .eq('status', 'Live')
             .order('updated_at', { ascending: false });
 
-        // --- FIX: Filter out matches with location "Admin Panel" ---
         const matches = rawMatches ? rawMatches.filter(m => m.location !== 'Admin Panel') : [];
 
         if (container) {
@@ -479,20 +239,17 @@
         }
         
         list.innerHTML = matches.map(m => {
-            // ... (Rest of the mapping code remains exactly the same) ...
             const isCricket = m.sport_name?.toLowerCase().includes('cricket');
             const isPerf = m.performance_data && Array.isArray(m.performance_data);
             
             let s1 = m.score1 || 0;
             let s2 = m.score2 || 0;
 
-            // Handle Cricket Scores
             if (isCricket && m.score_details) {
                 s1 = m.score_details.t1 ? `${m.score_details.t1.runs}/${m.score_details.t1.wickets} (${m.score_details.t1.overs})` : s1;
                 s2 = m.score_details.t2 ? `${m.score_details.t2.runs}/${m.score_details.t2.wickets} (${m.score_details.t2.overs})` : s2;
             }
 
-            // Handle Performance Leader
             let perfContent = '';
             if (isPerf) {
                 const leader = m.performance_data.find(p => p.rank === 1) || m.performance_data[0];
@@ -557,7 +314,6 @@
 
         container.innerHTML = matches.map(m => {
             const w = m.winners_data || {};
-            // Determine Category
             let categoryTag = '';
             const matchInfo = (m.match_type || '') + (m.team1_name || '');
             if (matchInfo.includes('Junior') || matchInfo.includes('Jr')) {
@@ -584,52 +340,37 @@
         `}).join('');
     }
 
-// --- 5. REALTIME SUBSCRIPTION (Original Logic Restored) ---
+    // --- 5. REALTIME SUBSCRIPTION ---
     function setupRealtimeSubscription() {
-        if (window.liveSubscription) return; 
+        if (liveSubscription) return; 
 
-        // Uses the anonymous client from config2.js (window.realtimeClient)
-        // Listens ONLY to the 'live_matches' table
-        window.liveSubscription = window.realtimeClient
+        liveSubscription = realtimeClient
             .channel('public:live_matches')
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_matches' }, (payload) => {
-                console.log("⚡ Update from live_matches:", payload.new);
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'live_matches' }, (payload) => {
+                const newData = payload.new;
+                if (!newData) return;
+
+                if (newData.status === 'Completed') {
+                    loadLatestChampions();
+                    showToast(`🏆 Result: ${newData.sport_name} finished!`);
+                }
                 
-                // 1. Refresh the Dashboard (Top Cards)
-                loadLiveMatches(); 
-                
-                // 2. Refresh the Schedule List (The cards in the list)
-                // We reload the list whenever a live match updates so the scores sync up
+                // Refresh Schedule
                 if (typeof window.loadSchedule === 'function') {
                     window.loadSchedule();
                 }
-
-                // 3. Refresh the Modal (Match View)
-                const modal = document.getElementById('modal-match-details');
-                
-                // Only refresh if the modal is open AND matches the ID of the updated game
-                if (modal && !modal.classList.contains('hidden') && window.currentOpenMatchId === payload.new.id) {
-                    window.openMatchDetails(payload.new.id);
-                }
-
-                if (payload.new.status === 'Completed') {
-                    loadLatestChampions();
-                    showToast(`🏆 Result: ${payload.new.sport_name} finished!`);
-                }
             })
-            .subscribe((status) => {
-                console.log("Realtime Status:", status);
-            });
+            .subscribe();
     }
-    // --- 6. SCHEDULE MODULE ---
+
+    // --- 6. SCHEDULE MODULE (EXPOSED) ---
     window.filterSchedule = function(view) {
         currentScheduleView = view;
-
         const btnUp = document.getElementById('btn-schedule-upcoming');
         const btnRes = document.getElementById('btn-schedule-results');
-
-        if (btnUp && btnRes) {
-            if (view === 'upcoming') {
+        
+        if(btnUp && btnRes) {
+            if(view === 'upcoming') {
                 btnUp.className = "flex-1 py-2.5 rounded-lg text-xs font-bold transition-all bg-white dark:bg-gray-700 shadow-sm text-brand-primary dark:text-white";
                 btnRes.className = "flex-1 py-2.5 rounded-lg text-xs font-bold transition-all text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200";
             } else {
@@ -637,9 +378,8 @@
                 btnRes.className = "flex-1 py-2.5 rounded-lg text-xs font-bold transition-all bg-white dark:bg-gray-700 shadow-sm text-brand-primary dark:text-white";
             }
         }
-
         window.loadSchedule();
-    };
+    }
 
     window.loadSchedule = async function() {
         const container = document.getElementById('schedule-list');
@@ -647,18 +387,16 @@
         
         container.innerHTML = '<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary mx-auto"></div>';
 
-        // 1. FETCH ALL DATA
         const { data: matches } = await supabaseClient
             .from('matches')
             .select('*, sports(name, icon, type, is_performance)')
             .order('start_time', { ascending: true });
 
         if (!matches || matches.length === 0) {
-            container.innerHTML = `<p class="text-gray-400 font-medium text-center">No matches found.</p>`;
+            container.innerHTML = `<p class="text-gray-400 font-medium text-center py-10">No matches found.</p>`;
             return;
         }
 
-        // 2. POPULATE SPORT FILTER
         const filterSelect = document.getElementById('schedule-sport-filter');
         if (filterSelect && filterSelect.children.length <= 1) {
             const uniqueSports = [...new Set(matches.map(m => m.sports?.name || 'Unknown'))].sort();
@@ -666,12 +404,11 @@
                 uniqueSports.map(s => `<option value="${s}">${s}</option>`).join('');
         }
 
-        // 3. APPLY FILTERS
-        const searchText = document.getElementById('schedule-search')?.value?.toLowerCase() || '';
+        const searchText = document.getElementById('schedule-search')?.value.toLowerCase() || '';
         const selectedSport = filterSelect?.value || '';
 
         let filteredMatches = matches.filter(m => {
-            if (m.location === 'Admin Panel') return false; // Filter Admin Panel
+            if (m.location === 'Admin Panel') return false; 
             
             const isViewMatch = currentScheduleView === 'upcoming' 
                 ? ['Upcoming', 'Scheduled', 'Live'].includes(m.status)
@@ -689,7 +426,6 @@
             return searchMatch && sportMatch;
         });
 
-        // 4. SORTING
         if(currentScheduleView === 'upcoming') {
             filteredMatches.sort((a, b) => {
                 if (a.status === 'Live' && b.status !== 'Live') return -1;
@@ -700,9 +436,8 @@
             filteredMatches.sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
         }
 
-        // 5. RENDER
         if (filteredMatches.length === 0) {
-            container.innerHTML = `<p class="text-gray-400 font-medium text-center py-4">No matches found matching criteria.</p>`;
+            container.innerHTML = `<p class="text-gray-400 font-medium text-center py-10">No matches found matching criteria.</p>`;
             return;
         }
 
@@ -762,14 +497,12 @@
             </div>`;
         }).join('');
         
-        if(window.lucide) lucide.createIcons();
-    } // <--- This closing brace was likely the missing one!
+        lucide.createIcons();
+    }
 
     // --- MATCH DETAILS ---
     window.openMatchDetails = async function(matchId) {
-        
-        window.currentOpenMatchId = matchId; // <--- TRACKING LINE ADDED
-
+        window.currentOpenMatchId = matchId; 
         const { data: match } = await supabaseClient.from('matches').select('*, sports(name, is_performance, unit)').eq('id', matchId).single();
         if(!match) return;
 
@@ -815,11 +548,9 @@
             } else {
                 results.sort((a, b) => {
                     if (a.rank && b.rank) return a.rank - b.rank;
-                    const valA = parseFloat(a.result) || 0;
-                    const valB = parseFloat(b.result) || 0;
-                    const isRace = match.sports?.name?.toLowerCase().includes('race');
-                    if (isRace) return (valA === 0 ? 9999 : valA) - (valB === 0 ? 9999 : valB);
-                    return valB - valA;
+                    const valA = parseFloat(a.result) || 999999;
+                    const valB = parseFloat(b.result) || 999999;
+                    return valA - valB;
                 });
 
                 tbody.innerHTML = results.map((r, index) => {
@@ -841,6 +572,7 @@
 
         document.getElementById('modal-match-details').classList.remove('hidden');
     }
+
     async function loadSquadList(teamId, containerId) {
         const container = document.getElementById(containerId);
         container.innerHTML = '<p class="text-[10px] text-gray-400 italic">Loading...</p>';
@@ -868,7 +600,7 @@
         `).join('');
     }
 
-    // --- 7. TEAMS MODULE (SEARCH ADDED) ---
+    // --- 7. TEAMS MODULE (EXPOSED) ---
     window.toggleTeamView = function(view) {
         document.getElementById('team-marketplace').classList.add('hidden');
         document.getElementById('team-locker').classList.add('hidden');
@@ -925,10 +657,8 @@
         }
 
         const validTeams = teams.filter(t => {
-            // 1. Team Name Search
             if (searchText && !t.name.toLowerCase().includes(searchText)) return false;
-
-            // 2. Gender/Category Validation
+            
             const isEsports = ['BGMI', 'FREE FIRE'].includes(t.sports.name);
             if (!isEsports && t.captain?.gender !== currentUser.gender) return false;
             if (!isEsports) {
@@ -1094,6 +824,7 @@
         lucide.createIcons();
     }
 
+    // --- WITHDRAW LOGIC (FIXED) ---
     window.leaveTeam = function(memberId, teamName) {
         showConfirmDialog("Leave Team?", `Are you sure you want to leave ${teamName}?`, async () => {
             const { error } = await supabaseClient.from('team_members').delete().eq('id', memberId);
@@ -1106,6 +837,54 @@
         });
     }
 
+    window.withdrawRegistration = async function(regId, sportId, sportType, sportName) {
+        showConfirmDialog("Withdraw?", `Withdraw from ${sportName}?`, async () => {
+            
+            // Check for Team Constraints
+            if (sportType === 'Team') {
+                const { data: membership } = await supabaseClient.from('team_members')
+                    .select('id, teams!inner(status)')
+                    .eq('user_id', currentUser.id)
+                    .eq('teams.sport_id', sportId)
+                    .single();
+
+                // If user is in a team (membership exists)
+                if (membership) {
+                    if (membership.teams.status === 'Locked') {
+                        window.closeModal('modal-confirm');
+                        return showToast("Cannot withdraw! Team is LOCKED.", "error");
+                    }
+                    // If not locked, remove from team first
+                    await supabaseClient.from('team_members').delete().eq('id', membership.id);
+                }
+            }
+
+            // Proceed to delete registration
+            const { error } = await supabaseClient.from('registrations').delete().eq('id', regId);
+            
+            if (error) {
+                showToast(error.message, "error");
+            } else {
+                showToast("Withdrawn Successfully", "success");
+                
+                // Update local state
+                myRegistrations = myRegistrations.filter(id => id != sportId);
+                
+                // Refresh lists
+                window.loadRegistrationHistory('history-list'); 
+                window.loadRegistrationHistory('my-registrations-list'); // If profile view uses this
+                
+                // Refresh Sport Buttons (to show "Register" instead of "Registered")
+                if(document.getElementById('sports-list').children.length > 0) {
+                    renderSportsList(allSportsList);
+                }
+                
+                window.closeModal('modal-confirm');
+            }
+        });
+    }
+
+    // --- REGISTRATION LOGIC ---
     window.toggleRegisterView = function(view) {
         document.getElementById('reg-section-new').classList.add('hidden');
         document.getElementById('reg-section-history').classList.add('hidden');
@@ -1214,124 +993,61 @@
         window.loadRegistrationHistory('my-registrations-list');
     }
 
-    window.withdrawRegistration = async function(regId, sportId, sportType, sportName) {
-        showConfirmDialog("Withdraw?", `Withdraw from ${sportName}?`, async () => {
-            
-            if (sportType === 'Team') {
-                const { data: membership } = await supabaseClient.from('team_members')
-                    .select('id, teams!inner(status)')
-                    .eq('user_id', currentUser.id)
-                    .eq('teams.sport_id', sportId)
-                    .single();
+    // --- CREATE TEAM LOGIC ---
+    window.openCreateTeamModal = async function() {
+        // Filter sports where user is REGISTERED but NOT in a team yet
+        const { data: sports } = await supabaseClient.from('sports').select('*').eq('type', 'Team').eq('status', 'Open');
+        
+        // Filter: Must be registered
+        const registeredSports = sports.filter(s => myRegistrations.includes(s.id));
+        
+        if(registeredSports.length === 0) return showToast("Register for a Team Sport first!", "error");
 
-                if (membership) {
-                    if (membership.teams.status === 'Locked') {
-                        window.closeModal('modal-confirm');
-                        return showToast("Cannot withdraw! Team is LOCKED.", "error");
-                    }
-                    await supabaseClient.from('team_members').delete().eq('id', membership.id);
-                }
-            }
-
-            const { error } = await supabaseClient.from('registrations').delete().eq('id', regId);
-            
-            if (error) {
-                showToast(error.message, "error");
-            } else {
-                showToast("Withdrawn Successfully", "success");
-                myRegistrations = myRegistrations.filter(id => id != sportId);
-                window.loadRegistrationHistory('history-list'); 
-                window.loadRegistrationHistory('my-registrations-list');
-                window.closeModal('modal-confirm');
-            }
-        });
+        const select = document.getElementById('new-team-sport');
+        select.innerHTML = registeredSports.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+        
+        document.getElementById('modal-create-team').classList.remove('hidden');
     }
 
-    window.openSettingsModal = function() {
-        document.getElementById('edit-fname').value = currentUser.first_name || '';
-        document.getElementById('edit-lname').value = currentUser.last_name || '';
-        document.getElementById('edit-email').value = currentUser.email || '';
-        document.getElementById('edit-mobile').value = currentUser.mobile || '';
-        document.getElementById('edit-class').value = currentUser.class_name || 'FY';
-        document.getElementById('edit-gender').value = currentUser.gender || 'Male';
-        document.getElementById('edit-sid').value = currentUser.student_id || '';
-        document.getElementById('modal-settings').classList.remove('hidden');
-    }
-
-    window.updateProfile = async function() {
-        const updates = {
-            first_name: document.getElementById('edit-fname').value,
-            last_name: document.getElementById('edit-lname').value,
-            mobile: document.getElementById('edit-mobile').value,
-            class_name: document.getElementById('edit-class').value,
-            student_id: document.getElementById('edit-sid').value,
-            gender: document.getElementById('edit-gender').value
-        };
-
-        if(!updates.first_name || !updates.last_name) return showToast("Name is required", "error");
-
-        const { error } = await supabaseClient.from('users').update(updates).eq('id', currentUser.id);
-
-        if(error) showToast("Error updating profile", "error");
-        else {
-            Object.assign(currentUser, updates);
-            updateProfileUI();
-            window.closeModal('modal-settings');
-            showToast("Profile Updated!", "success");
+    window.createTeam = async function() {
+        const name = document.getElementById('new-team-name').value;
+        const sportId = document.getElementById('new-team-sport').value;
+        
+        if(!name) return showToast("Enter Team Name", "error");
+        
+        // Double Check Registration
+        if(!myRegistrations.includes(parseInt(sportId)) && !myRegistrations.includes(sportId)) {
+            return showToast("⚠️ Register for this sport first!", "error");
         }
-    }
 
-    async function getSportIdByName(name) {
-        const { data } = await supabaseClient.from('sports').select('id').eq('name', name).single();
-        return data?.id;
-    }
+        // Check if already in a team for this sport
+        const { data: existing } = await supabaseClient.from('team_members')
+            .select('team_id, teams!inner(sport_id)')
+            .eq('user_id', currentUser.id)
+            .eq('teams.sport_id', sportId);
+            
+        if(existing && existing.length > 0) return showToast("❌ You already have a team for this sport.", "error");
 
-    window.closeModal = id => document.getElementById(id).classList.add('hidden');
+        // Create Team
+        const { data: team, error } = await supabaseClient.from('teams')
+            .insert({ name: name, sport_id: sportId, captain_id: currentUser.id, status: 'Open' })
+            .select()
+            .single();
 
-    window.showToast = function(msg, type='info') {
-        const t = document.getElementById('toast-container');
-        if (!t) return; // Guard clause for missing toast container
-        
-        const msgEl = document.getElementById('toast-msg');
-        const iconEl = document.getElementById('toast-icon');
-        
-        if (msgEl) msgEl.innerText = msg;
-        
-        if (iconEl) {
-            if (type === 'error') {
-                iconEl.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5 text-red-400"></i>';
-            } else {
-                iconEl.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5 text-green-400"></i>';
-            }
+        if(error) {
+            showToast(error.message, "error");
+        } else {
+            // Add Captain as Member
+            await supabaseClient.from('team_members').insert({ team_id: team.id, user_id: currentUser.id, status: 'Accepted' });
+            showToast("Team Created!", "success");
+            window.closeModal('modal-create-team');
+            window.toggleTeamView('locker');
         }
-        
-        if (window.lucide) lucide.createIcons();
-        
-        t.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-10');
-        
-        setTimeout(() => {
-            t.classList.add('opacity-0', 'pointer-events-none', 'translate-y-10');
-        }, 3000);
-    }
-
-    let confirmCallback = null;
-    function setupConfirmModal() {
-        if (!document.getElementById('btn-confirm-yes')) return;
-        document.getElementById('btn-confirm-yes').onclick = () => confirmCallback && confirmCallback();
-        document.getElementById('btn-confirm-cancel').onclick = () => { window.closeModal('modal-confirm'); confirmCallback = null; };
-    }
-
-    function showConfirmDialog(title, msg, onConfirm) {
-        if (!document.getElementById('modal-confirm')) return;
-        document.getElementById('confirm-title').innerText = title;
-        document.getElementById('confirm-msg').innerText = msg;
-        confirmCallback = onConfirm;
-        document.getElementById('modal-confirm').classList.remove('hidden');
     }
 
     window.openRegistrationModal = async function(id) {
         const { data: sport } = await supabaseClient.from('sports').select('*').eq('id', id).single();
-        selectedSportForReg = sport;
+        selectedSportForReg = sport; // Safe assignment
         
         document.getElementById('reg-modal-sport-name').innerText = sport.name;
         document.getElementById('reg-modal-user-name').innerText = `${currentUser.first_name} ${currentUser.last_name}`;
@@ -1349,16 +1065,17 @@
         }
 
         if(!currentUser.mobile) {
-            const phone = prompt("⚠️ Mobile number is required. Please enter yours:");
-            if(!phone || phone.length < 10) {
-                if (btn) {
-                    btn.disabled = false;
-                    btn.innerText = originalText;
-                }
-                return showToast("Invalid Mobile Number", "error");
+            showToast("⚠️ Mobile number required! Redirecting...", "error");
+            setTimeout(() => {
+                window.closeModal('modal-register');
+                window.openSettingsModal();
+            }, 1500);
+            
+            if (btn) {
+                btn.disabled = false;
+                btn.innerText = originalText;
             }
-            await supabaseClient.from('users').update({mobile: phone}).eq('id', currentUser.id);
-            currentUser.mobile = phone; 
+            return;
         }
 
         const { error } = await supabaseClient.from('registrations').insert({
@@ -1390,36 +1107,7 @@
         }
     }
 
-    window.openCreateTeamModal = async function() {
-        const { data } = await supabaseClient.from('sports').select('*').eq('type', 'Team').eq('status', 'Open');
-        document.getElementById('new-team-sport').innerHTML = data.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
-        document.getElementById('modal-create-team').classList.remove('hidden');
-    }
-
-    window.createTeam = async function() {
-        const name = document.getElementById('new-team-name').value;
-        const sportId = document.getElementById('new-team-sport').value;
-        const sportName = document.getElementById('new-team-sport').options[document.getElementById('new-team-sport').selectedIndex].text;
-        
-        if (!checkGenderEligibility(sportName, 'Team')) return showToast("⚠️ Females allowed only in Relay & eSports.", "error");
-
-        if(!name) return showToast("Enter Team Name", "error");
-        if(!myRegistrations.includes(parseInt(sportId)) && !myRegistrations.includes(sportId)) return showToast("⚠️ Register for this sport first!", "error");
-        
-        const { data: existing } = await supabaseClient.from('team_members').select('team_id, teams!inner(sport_id)').eq('user_id', currentUser.id).eq('teams.sport_id', sportId);
-        if(existing && existing.length > 0) return showToast("❌ You already have a team for this sport.", "error");
-
-        const { data: team, error } = await supabaseClient.from('teams').insert({ name: name, sport_id: sportId, captain_id: currentUser.id, status: 'Open' }).select().single();
-
-        if(error) showToast(error.message, "error");
-        else {
-            await supabaseClient.from('team_members').insert({ team_id: team.id, user_id: currentUser.id, status: 'Accepted' });
-            showToast("Team Created!", "success");
-            window.closeModal('modal-create-team');
-            window.toggleTeamView('locker');
-        }
-    }
-
+    // --- OTHER MODALS ---
     window.openManageTeamModal = async function(teamId, teamName, isLocked, isTournamentFull) {
         document.getElementById('manage-team-title').innerText = "Manage: " + teamName;
         
@@ -1506,15 +1194,98 @@
         });
     }
 
-    // --- UTILS: TOAST INJECTOR ---
+    window.openSettingsModal = function() {
+        document.getElementById('edit-fname').value = currentUser.first_name || '';
+        document.getElementById('edit-lname').value = currentUser.last_name || '';
+        document.getElementById('edit-email').value = currentUser.email || '';
+        document.getElementById('edit-mobile').value = currentUser.mobile || '';
+        document.getElementById('edit-class').value = currentUser.class_name || 'FY';
+        document.getElementById('edit-gender').value = currentUser.gender || 'Male';
+        document.getElementById('edit-sid').value = currentUser.student_id || '';
+        document.getElementById('modal-settings').classList.remove('hidden');
+    }
+
+    window.updateProfile = async function() {
+        const updates = {
+            first_name: document.getElementById('edit-fname').value,
+            last_name: document.getElementById('edit-lname').value,
+            mobile: document.getElementById('edit-mobile').value,
+            class_name: document.getElementById('edit-class').value,
+            student_id: document.getElementById('edit-sid').value,
+            gender: document.getElementById('edit-gender').value
+        };
+
+        if(!updates.first_name || !updates.last_name) return showToast("Name is required", "error");
+
+        const { error } = await supabaseClient.from('users').update(updates).eq('id', currentUser.id);
+
+        if(error) showToast("Error updating profile", "error");
+        else {
+            Object.assign(currentUser, updates);
+            updateProfileUI();
+            window.closeModal('modal-settings');
+            showToast("Profile Updated!", "success");
+        }
+    }
+
+    async function getSportIdByName(name) {
+        const { data } = await supabaseClient.from('sports').select('id').eq('name', name).single();
+        return data?.id;
+    }
+
+    window.closeModal = id => document.getElementById(id).classList.add('hidden');
+
+    window.showToast = function(msg, type='info') {
+        const t = document.getElementById('toast-container');
+        if (!t) return; 
+        
+        const msgEl = document.getElementById('toast-msg');
+        const iconEl = document.getElementById('toast-icon');
+        
+        if (msgEl) msgEl.innerText = msg;
+        
+        if (iconEl) {
+            if (type === 'error') {
+                iconEl.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5 text-red-400"></i>';
+            } else {
+                iconEl.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5 text-green-400"></i>';
+            }
+        }
+        
+        if (window.lucide) lucide.createIcons();
+        
+        t.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-10');
+        
+        setTimeout(() => {
+            t.classList.add('opacity-0', 'pointer-events-none', 'translate-y-10');
+        }, 3000);
+    }
+
+    let confirmCallback = null;
+    function setupConfirmModal() {
+        if (!document.getElementById('btn-confirm-yes')) return;
+        document.getElementById('btn-confirm-yes').onclick = () => {
+            if(confirmCallback) confirmCallback();
+        };
+        document.getElementById('btn-confirm-cancel').onclick = () => window.closeModal('modal-confirm');
+    }
+
+    function showConfirmDialog(title, msg, onConfirm) {
+        if (!document.getElementById('modal-confirm')) return;
+        document.getElementById('confirm-title').innerText = title;
+        document.getElementById('confirm-msg').innerText = msg;
+        confirmCallback = onConfirm;
+        document.getElementById('modal-confirm').classList.remove('hidden');
+    }
+
     function injectToastContainer() {
         if(!document.getElementById('toast-container')) {
             const div = document.createElement('div');
             div.id = 'toast-container';
-            div.className = 'fixed bottom-10 left-1/2 transform -translate-x-1/2 z-[70] transition-all duration-300 opacity-0 pointer-events-none translate-y-10 w-11/12 max-w-sm';
+            div.className = 'fixed bottom-24 left-1/2 transform -translate-x-1/2 z-[70] transition-all duration-300 opacity-0 pointer-events-none translate-y-10 w-11/12 max-w-sm';
             div.innerHTML = `<div id="toast-content" class="bg-gray-900 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 backdrop-blur-md border border-gray-700/50"><div id="toast-icon"></div><p id="toast-msg" class="text-sm font-bold tracking-wide"></p></div>`;
             document.body.appendChild(div);
         }
     }
 
-})(); // END IIFE
+})();
