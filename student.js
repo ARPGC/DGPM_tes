@@ -2,7 +2,7 @@
 // URJA 2026 - STUDENT PORTAL CONTROLLER
 // ==========================================
 
-(function() { // Wrapped in IIFE for safety
+(function() { // Wrapped in IIFE for safet
 
     // --- CONFIGURATION & CLIENTS ---
     if (typeof CONFIG === 'undefined' || typeof CONFIG_REALTIME === 'undefined') {
@@ -21,7 +21,7 @@
     let currentScheduleView = 'upcoming'; 
     let allSportsList = [];
     let liveSubscription = null;
-    let selectedSportForReg = null; 
+    let selectedSportForReg = null; // FIXED: Variable was missing
 
     const DEFAULT_TEAM_SIZE = 5;
     const TOURNAMENT_CAP = 64; 
@@ -208,12 +208,12 @@
 
     // --- 4. DASHBOARD (RESULTS ONLY) ---
     async function loadDashboard() {
-        window.loadLiveMatches(); 
+        window.loadLiveMatches(); // Fixed: Explicit window call
         loadLatestChampions();
     }
 
     // A. LIVE MATCHES (CRICKET & PERFORMANCE ENABLED)
-    window.loadLiveMatches = async function() { 
+    window.loadLiveMatches = async function() { // Exposed to window
         const container = document.getElementById('live-matches-container');
         const list = document.getElementById('live-matches-list');
         
@@ -497,7 +497,7 @@
             </div>`;
         }).join('');
         
-        if(window.lucide) lucide.createIcons();
+        lucide.createIcons();
     }
 
     // --- MATCH DETAILS ---
@@ -548,11 +548,9 @@
             } else {
                 results.sort((a, b) => {
                     if (a.rank && b.rank) return a.rank - b.rank;
-                    const valA = parseFloat(a.result) || 0;
-                    const valB = parseFloat(b.result) || 0;
-                    const isRace = match.sports?.name?.toLowerCase().includes('race');
-                    if (isRace) return (valA === 0 ? 9999 : valA) - (valB === 0 ? 9999 : valB);
-                    return valB - valA;
+                    const valA = parseFloat(a.result) || 999999;
+                    const valB = parseFloat(b.result) || 999999;
+                    return valA - valB;
                 });
 
                 tbody.innerHTML = results.map((r, index) => {
@@ -659,10 +657,8 @@
         }
 
         const validTeams = teams.filter(t => {
-            // 1. Team Name Search
             if (searchText && !t.name.toLowerCase().includes(searchText)) return false;
-
-            // 2. Gender/Category Validation
+            
             const isEsports = ['BGMI', 'FREE FIRE'].includes(t.sports.name);
             if (!isEsports && t.captain?.gender !== currentUser.gender) return false;
             if (!isEsports) {
@@ -828,6 +824,7 @@
         lucide.createIcons();
     }
 
+    // --- WITHDRAW LOGIC (FIXED) ---
     window.leaveTeam = function(memberId, teamName) {
         showConfirmDialog("Leave Team?", `Are you sure you want to leave ${teamName}?`, async () => {
             const { error } = await supabaseClient.from('team_members').delete().eq('id', memberId);
@@ -840,6 +837,76 @@
         });
     }
 
+   window.withdrawRegistration = async function(regId, sportId, sportType, sportName) {
+        showConfirmDialog("Withdraw?", `Withdraw from ${sportName}?`, async () => {
+            
+            // 1. IF TEAM SPORT: Handle Team Membership First
+            if (sportType === 'Team') {
+                // Fetch membership with Captain details
+                const { data: membership, error: memError } = await supabaseClient
+                    .from('team_members')
+                    .select('id, teams!inner(status, captain_id, name)')
+                    .eq('user_id', currentUser.id)
+                    .eq('teams.sport_id', sportId)
+                    .maybeSingle();
+
+                if (memError) {
+                    window.closeModal('modal-confirm');
+                    return showToast("Error checking team status: " + memError.message, "error");
+                }
+
+                if (membership) {
+                    // CHECK 1: Is the team Locked?
+                    if (membership.teams.status === 'Locked') {
+                        window.closeModal('modal-confirm');
+                        return showToast(`Cannot withdraw! Your team '${membership.teams.name}' is LOCKED.`, "error");
+                    }
+                    
+                    // CHECK 2: Is the user the Captain?
+                    if (membership.teams.captain_id === currentUser.id) {
+                        window.closeModal('modal-confirm');
+                        return showToast(`⚠️ You are the Captain of '${membership.teams.name}'. You must DELETE the team in 'My Teams' before withdrawing.`, "error");
+                    }
+
+                    // Attempt to leave the team
+                    const { error: leaveError } = await supabaseClient
+                        .from('team_members')
+                        .delete()
+                        .eq('id', membership.id);
+
+                    if (leaveError) {
+                        window.closeModal('modal-confirm');
+                        return showToast("Failed to leave team: " + leaveError.message, "error");
+                    }
+                }
+            }
+
+            // 2. DELETE REGISTRATION (Only if team steps passed or skipped)
+            const { error } = await supabaseClient.from('registrations').delete().eq('id', regId);
+            
+            if (error) {
+                showToast("Withdrawal Failed: " + error.message, "error");
+            } else {
+                showToast("Withdrawn Successfully", "success");
+                
+                // Update local state
+                myRegistrations = myRegistrations.filter(id => id != sportId);
+                
+                // Refresh lists
+                if(document.getElementById('history-list')) window.loadRegistrationHistory('history-list'); 
+                if(document.getElementById('my-registrations-list')) window.loadRegistrationHistory('my-registrations-list');
+                
+                // Refresh Sport Buttons (to show "Register" again)
+                if(document.getElementById('sports-list') && document.getElementById('sports-list').children.length > 0) {
+                    renderSportsList(allSportsList);
+                }
+                
+                window.closeModal('modal-confirm');
+            }
+        });
+    }
+
+    // --- REGISTRATION LOGIC ---
     window.toggleRegisterView = function(view) {
         document.getElementById('reg-section-new').classList.add('hidden');
         document.getElementById('reg-section-history').classList.add('hidden');
@@ -948,56 +1015,12 @@
         window.loadRegistrationHistory('my-registrations-list');
     }
 
-    window.withdrawRegistration = async function(regId, sportId, sportType, sportName) {
-        showConfirmDialog("Withdraw?", `Withdraw from ${sportName}?`, async () => {
-            
-            // Check for Team Constraints
-            if (sportType === 'Team') {
-                const { data: membership, error: memError } = await supabaseClient.from('team_members')
-                    .select('id, teams!inner(status)')
-                    .eq('user_id', currentUser.id)
-                    .eq('teams.sport_id', sportId)
-                    .maybeSingle(); // FIXED: Changed from .single() to .maybeSingle() to prevent 406 error
-
-                // If user is in a team (membership exists)
-                if (membership) {
-                    if (membership.teams.status === 'Locked') {
-                        window.closeModal('modal-confirm');
-                        return showToast("Cannot withdraw! Team is LOCKED.", "error");
-                    }
-                    // If not locked, remove from team first
-                    await supabaseClient.from('team_members').delete().eq('id', membership.id);
-                }
-            }
-
-            // Proceed to delete registration
-            const { error } = await supabaseClient.from('registrations').delete().eq('id', regId);
-            
-            if (error) {
-                showToast(error.message, "error");
-            } else {
-                showToast("Withdrawn Successfully", "success");
-                
-                // Update local state
-                myRegistrations = myRegistrations.filter(id => id != sportId);
-                
-                // Refresh lists
-                window.loadRegistrationHistory('history-list'); 
-                window.loadRegistrationHistory('my-registrations-list');
-                
-                // Refresh Sport Buttons (to show "Register" instead of "Registered")
-                if(document.getElementById('sports-list').children.length > 0) {
-                    renderSportsList(allSportsList);
-                }
-                
-                window.closeModal('modal-confirm');
-            }
-        });
-    }
-
     // --- CREATE TEAM LOGIC ---
     window.openCreateTeamModal = async function() {
+        // Filter sports where user is REGISTERED but NOT in a team yet
         const { data: sports } = await supabaseClient.from('sports').select('*').eq('type', 'Team').eq('status', 'Open');
+        
+        // Filter: Must be registered
         const registeredSports = sports.filter(s => myRegistrations.includes(s.id));
         
         if(registeredSports.length === 0) return showToast("Register for a Team Sport first!", "error");
@@ -1014,10 +1037,12 @@
         
         if(!name) return showToast("Enter Team Name", "error");
         
+        // Double Check Registration
         if(!myRegistrations.includes(parseInt(sportId)) && !myRegistrations.includes(sportId)) {
             return showToast("⚠️ Register for this sport first!", "error");
         }
 
+        // Check if already in a team for this sport
         const { data: existing } = await supabaseClient.from('team_members')
             .select('team_id, teams!inner(sport_id)')
             .eq('user_id', currentUser.id)
@@ -1025,6 +1050,7 @@
             
         if(existing && existing.length > 0) return showToast("❌ You already have a team for this sport.", "error");
 
+        // Create Team
         const { data: team, error } = await supabaseClient.from('teams')
             .insert({ name: name, sport_id: sportId, captain_id: currentUser.id, status: 'Open' })
             .select()
@@ -1033,6 +1059,7 @@
         if(error) {
             showToast(error.message, "error");
         } else {
+            // Add Captain as Member
             await supabaseClient.from('team_members').insert({ team_id: team.id, user_id: currentUser.id, status: 'Accepted' });
             showToast("Team Created!", "success");
             window.closeModal('modal-create-team');
@@ -1042,7 +1069,7 @@
 
     window.openRegistrationModal = async function(id) {
         const { data: sport } = await supabaseClient.from('sports').select('*').eq('id', id).single();
-        selectedSportForReg = sport; 
+        selectedSportForReg = sport; // Safe assignment
         
         document.getElementById('reg-modal-sport-name').innerText = sport.name;
         document.getElementById('reg-modal-user-name').innerText = `${currentUser.first_name} ${currentUser.last_name}`;
@@ -1189,7 +1216,90 @@
         });
     }
 
-    // --- UTILS: TOAST INJECTOR ---
+    window.openSettingsModal = function() {
+        document.getElementById('edit-fname').value = currentUser.first_name || '';
+        document.getElementById('edit-lname').value = currentUser.last_name || '';
+        document.getElementById('edit-email').value = currentUser.email || '';
+        document.getElementById('edit-mobile').value = currentUser.mobile || '';
+        document.getElementById('edit-class').value = currentUser.class_name || 'FY';
+        document.getElementById('edit-gender').value = currentUser.gender || 'Male';
+        document.getElementById('edit-sid').value = currentUser.student_id || '';
+        document.getElementById('modal-settings').classList.remove('hidden');
+    }
+
+    window.updateProfile = async function() {
+        const updates = {
+            first_name: document.getElementById('edit-fname').value,
+            last_name: document.getElementById('edit-lname').value,
+            mobile: document.getElementById('edit-mobile').value,
+            class_name: document.getElementById('edit-class').value,
+            student_id: document.getElementById('edit-sid').value,
+            gender: document.getElementById('edit-gender').value
+        };
+
+        if(!updates.first_name || !updates.last_name) return showToast("Name is required", "error");
+
+        const { error } = await supabaseClient.from('users').update(updates).eq('id', currentUser.id);
+
+        if(error) showToast("Error updating profile", "error");
+        else {
+            Object.assign(currentUser, updates);
+            updateProfileUI();
+            window.closeModal('modal-settings');
+            showToast("Profile Updated!", "success");
+        }
+    }
+
+    async function getSportIdByName(name) {
+        const { data } = await supabaseClient.from('sports').select('id').eq('name', name).single();
+        return data?.id;
+    }
+
+    window.closeModal = id => document.getElementById(id).classList.add('hidden');
+
+    window.showToast = function(msg, type='info') {
+        const t = document.getElementById('toast-container');
+        if (!t) return; 
+        
+        const msgEl = document.getElementById('toast-msg');
+        const iconEl = document.getElementById('toast-icon');
+        
+        if (msgEl) msgEl.innerText = msg;
+        
+        if (iconEl) {
+            if (type === 'error') {
+                iconEl.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5 text-red-400"></i>';
+            } else {
+                iconEl.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5 text-green-400"></i>';
+            }
+        }
+        
+        if (window.lucide) lucide.createIcons();
+        
+        t.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-10');
+        
+        setTimeout(() => {
+            t.classList.add('opacity-0', 'pointer-events-none', 'translate-y-10');
+        }, 3000);
+    }
+
+    let confirmCallback = null;
+    function setupConfirmModal() {
+        if (!document.getElementById('btn-confirm-yes')) return;
+        document.getElementById('btn-confirm-yes').onclick = () => {
+            if(confirmCallback) confirmCallback();
+        };
+        document.getElementById('btn-confirm-cancel').onclick = () => window.closeModal('modal-confirm');
+    }
+
+    function showConfirmDialog(title, msg, onConfirm) {
+        if (!document.getElementById('modal-confirm')) return;
+        document.getElementById('confirm-title').innerText = title;
+        document.getElementById('confirm-msg').innerText = msg;
+        confirmCallback = onConfirm;
+        document.getElementById('modal-confirm').classList.remove('hidden');
+    }
+
     function injectToastContainer() {
         if(!document.getElementById('toast-container')) {
             const div = document.createElement('div');
@@ -1200,4 +1310,4 @@
         }
     }
 
-})(); // END IIFE
+})();
