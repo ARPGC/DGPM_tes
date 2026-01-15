@@ -299,15 +299,14 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
                 const teamIds = ageFilteredTeams.map(t => t.team_id);
                 
                 if (teamIds.length > 0) {
-                    // This query fetches members and their gender
+                    // UPDATED: use 'team_members' table instead of 'registrations'
                     const { data: members, error: regError } = await supabaseClient
-                        .from('registrations')
+                        .from('team_members')
                         .select('team_id, users(gender)')
                         .in('team_id', teamIds);
 
                     if (regError) {
                         console.error("Gender Fetch Error:", regError);
-                        // Fallback: If query fails, assume filtering by Age is enough (rarely correct but prevents crash)
                     }
 
                     // Map TeamID -> Gender (Male/Female)
@@ -326,7 +325,6 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
                     // 4. Final Filter: Keep only matching gender
                     candidates = ageFilteredTeams.filter(t => {
                         const detectedGender = teamGenderMap[t.team_id];
-                        // If no gender found, we skip, or default? Better to skip to be safe.
                         return detectedGender === requiredGender;
                     }).map(t => ({ id: t.team_id, name: t.team_name }));
                 }
