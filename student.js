@@ -936,17 +936,34 @@ window.withdrawRegistration = async function(regId, sportId, sportType, sportNam
         }
     }
 
-    window.loadSportsDirectory = async function() {
+   window.loadSportsDirectory = async function() {
         const container = document.getElementById('sports-list');
+        // Prevent reloading if already populated
         if(container.children.length > 0 && allSportsList.length > 0) return;
 
         container.innerHTML = '<div class="col-span-2 text-center py-10"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary mx-auto"></div></div>';
 
-        const { data: sports } = await supabaseClient.from('sports').select('*').eq('status', 'Open').order('name');
-        allSportsList = sports || [];
+        // 1. Fetch sports including the new column
+        const { data: sports } = await supabaseClient
+            .from('sports')
+            .select('*')
+            .eq('status', 'Open')
+            .order('name');
+            
+        // 2. Filter logic:
+        // Keep the sport IF:
+        // The user is NOT Female  OR  The sport ALLOWS Females
+        const filteredSports = (sports || []).filter(sport => {
+            if (currentUser.gender === 'Female' && sport.is_females_allowed === false) {
+                return false; // Hide this sport
+            }
+            return true; // Show this sport
+        });
+
+        allSportsList = filteredSports;
         renderSportsList(allSportsList);
     }
-
+    
     function renderSportsList(list) {
         const container = document.getElementById('sports-list');
         
