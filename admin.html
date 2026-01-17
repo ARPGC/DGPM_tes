@@ -17,6 +17,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="config.js"></script>
     <script src="config2.js"></script> 
+    <script src="superviser.js" defer></script>
     <script src="admin.js" defer></script>
 
     <script>
@@ -64,11 +65,20 @@
             <button onclick="switchView('dashboard')" id="nav-dashboard" class="nav-item w-full flex items-center gap-3 px-6 py-3 text-sm font-bold text-gray-500">
                 <i data-lucide="layout-dashboard" class="w-5 h-5"></i> Dashboard
             </button>
-            <button onclick="switchView('sports')" id="nav-sports" class="nav-item w-full flex items-center gap-3 px-6 py-3 text-sm font-bold text-gray-500">
-                <i data-lucide="trophy" class="w-5 h-5"></i> Manage Sports
-            </button>
             <button onclick="switchView('matches')" id="nav-matches" class="nav-item w-full flex items-center gap-3 px-6 py-3 text-sm font-bold text-gray-500">
                 <i data-lucide="calendar" class="w-5 h-5"></i> Schedule & Matches
+            </button>
+            
+            <div class="px-6 pt-4 pb-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Data & Users</div>
+            
+            <button onclick="switchView('registrations')" id="nav-registrations" class="nav-item w-full flex items-center gap-3 px-6 py-3 text-sm font-bold text-gray-500">
+                <i data-lucide="clipboard-list" class="w-5 h-5"></i> Registrations
+            </button>
+            <button onclick="switchView('teams')" id="nav-teams" class="nav-item w-full flex items-center gap-3 px-6 py-3 text-sm font-bold text-gray-500">
+                <i data-lucide="shield" class="w-5 h-5"></i> Teams & Squads
+            </button>
+            <button onclick="switchView('users')" id="nav-users" class="nav-item w-full flex items-center gap-3 px-6 py-3 text-sm font-bold text-gray-500">
+                <i data-lucide="users" class="w-5 h-5"></i> All Users
             </button>
         </nav>
 
@@ -81,7 +91,7 @@
 
     <main class="flex-1 overflow-y-auto bg-gray-50 p-8 relative">
         
-        <div class="flex justify-between items-center mb-8 text-center sm:text-left">
+        <div class="flex justify-between items-center mb-8">
             <h2 id="page-title" class="text-3xl font-black text-gray-900 tracking-tight">Dashboard</h2>
             
             <div id="global-actions" class="hidden flex gap-2">
@@ -109,29 +119,62 @@
                     <p class="text-4xl font-black text-purple-600 mt-2" id="dash-total-teams">-</p>
                 </div>
             </div>
-            
-            <div class="bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
-                <h3 class="font-bold text-lg mb-4 text-gray-900">Quick Actions</h3>
-                <div class="flex flex-wrap gap-4">
-                    <button onclick="switchView('sports')" class="px-6 py-3 bg-gray-100 rounded-xl text-sm font-bold hover:bg-gray-200 transition-colors">Manage Sports</button>
-                    <button onclick="openAddSportModal()" class="px-6 py-3 bg-black text-white rounded-xl text-sm font-bold hover:bg-gray-800 transition-colors shadow-lg">+ Add New Sport</button>
-                </div>
-            </div>
         </div>
 
-        <div id="view-sports" class="view-section hidden animate-fade-in">
-            <div class="space-y-6">
-                <div class="bg-white rounded-3xl shadow-sm border border-gray-200 p-6">
-                    <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><i data-lucide="trophy" class="w-5 h-5 text-brand-primary"></i> Tournaments</h3>
-                    <div class="overflow-hidden rounded-xl border border-gray-100">
-                        <table class="w-full"><tbody id="sports-table-tournament"></tbody></table>
+        <div id="view-registrations" class="view-section hidden animate-fade-in">
+            <div class="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="p-4 border-b border-gray-100 flex flex-wrap gap-4 items-center bg-gray-50/50">
+                    <div class="flex-1 min-w-[200px]">
+                        <div class="relative">
+                            <i data-lucide="search" class="absolute left-3 top-3 w-4 h-4 text-gray-400"></i>
+                            <input type="text" id="reg-search" onkeyup="filterRegistrations()" placeholder="Search Name, ID..." class="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-brand-primary/20 transition-all">
+                        </div>
                     </div>
+                    
+                    <select id="filter-reg-sport" onchange="filterRegistrations()" class="bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none cursor-pointer hover:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 transition-all">
+                        <option value="">All Sports</option>
+                        </select>
+
+                    <select id="filter-reg-gender" onchange="filterRegistrations()" class="bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none cursor-pointer hover:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 transition-all">
+                        <option value="">All Genders</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                    </select>
+
+                    <select id="filter-reg-class" onchange="filterRegistrations()" class="bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none cursor-pointer hover:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 transition-all">
+                        <option value="">All Classes</option>
+                        <option value="Junior">Junior (FY/SY JC)</option>
+                        <option value="Senior">Senior (Degree)</option>
+                    </select>
+                    
+                    <button onclick="resetRegFilters()" class="p-2.5 bg-gray-200 text-gray-600 rounded-xl hover:bg-gray-300 transition-colors" title="Reset Filters">
+                        <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                    </button>
                 </div>
-                <div class="bg-white rounded-3xl shadow-sm border border-gray-200 p-6">
-                    <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><i data-lucide="timer" class="w-5 h-5 text-brand-primary"></i> Performance Events</h3>
-                    <div class="overflow-hidden rounded-xl border border-gray-100">
-                        <table class="w-full"><tbody id="sports-table-performance"></tbody></table>
-                    </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-gray-50 text-gray-500 text-[10px] uppercase tracking-wider font-bold">
+                                <th class="p-4 border-b cursor-pointer hover:text-brand-primary group" onclick="sortRegistrations('name')">
+                                    Student <i data-lucide="arrow-up-down" class="w-3 h-3 inline ml-1 opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                                </th>
+                                <th class="p-4 border-b cursor-pointer hover:text-brand-primary group" onclick="sortRegistrations('sport')">
+                                    Sport <i data-lucide="arrow-up-down" class="w-3 h-3 inline ml-1 opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                                </th>
+                                <th class="p-4 border-b">Class / ID</th>
+                                <th class="p-4 border-b">Gender</th>
+                                <th class="p-4 border-b">Contact</th>
+                                <th class="p-4 border-b text-right">Registered On</th>
+                            </tr>
+                        </thead>
+                        <tbody id="registrations-table-body" class="text-sm font-medium text-gray-700">
+                            </tbody>
+                    </table>
+                </div>
+                
+                <div class="p-3 bg-gray-50 border-t border-gray-100 text-[10px] font-bold text-gray-400 text-right uppercase tracking-wider">
+                    Showing <span id="reg-count" class="text-gray-900">0</span> records
                 </div>
             </div>
         </div>
@@ -140,55 +183,41 @@
             <div id="matches-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
         </div>
 
+        <div id="view-teams" class="view-section hidden animate-fade-in">
+             <div id="teams-grid" class="grid grid-cols-1 md:grid-cols-3 gap-6"></div>
+        </div>
+
+        <div id="view-users" class="view-section hidden animate-fade-in">
+            <div class="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="p-4 border-b border-gray-100">
+                    <div class="relative max-w-md">
+                        <i data-lucide="search" class="absolute left-3 top-3 w-4 h-4 text-gray-400"></i>
+                        <input type="text" id="user-search" onkeyup="filterUsers()" placeholder="Search users by Name or ID..." class="w-full pl-10 pr-4 py-2.5 bg-gray-50 border-none rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-brand-primary/20 transition-all">
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-gray-50 text-gray-500 text-[10px] uppercase tracking-wider font-bold">
+                                <th class="p-4 border-b">User</th>
+                                <th class="p-4 border-b">Role</th>
+                                <th class="p-4 border-b">Class / ID</th>
+                                <th class="p-4 border-b">Volunteer Assign</th>
+                                <th class="p-4 border-b text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-table-body" class="text-sm font-medium text-gray-700"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
     </main>
 
     <div id="toast-container" class="fixed bottom-10 left-1/2 transform -translate-x-1/2 z-[70] transition-all duration-300 opacity-0 pointer-events-none translate-y-10 w-11/12 max-w-sm">
         <div id="toast-content" class="bg-gray-900 text-white px-5 py-4 rounded-2xl shadow-2xl flex items-center gap-4 backdrop-blur-md border border-gray-700/50">
             <div id="toast-icon"></div>
             <p id="toast-msg" class="text-sm font-bold flex-1 tracking-wide"></p>
-        </div>
-    </div>
-
-    <div id="modal-add-sport" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-        <div class="bg-white p-6 rounded-3xl w-full max-w-sm shadow-2xl relative">
-            <button onclick="closeModal('modal-add-sport')" class="absolute top-4 right-4 p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors">
-                <i data-lucide="x" class="w-4 h-4 text-gray-500"></i>
-            </button>
-            <h3 class="font-black text-2xl mb-1 text-gray-900">Add New Sport</h3>
-            <p class="text-xs text-gray-500 font-bold mb-6">Create a tournament or event</p>
-            
-            <form onsubmit="handleAddSport(event)" class="space-y-4">
-                <div>
-                    <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wide ml-1 mb-1 block">Sport Name</label>
-                    <input type="text" id="new-sport-name" placeholder="e.g. BGMI" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-brand-primary transition-colors" required>
-                </div>
-                
-                <div>
-                    <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wide ml-1 mb-1 block">Type</label>
-                    <select id="new-sport-type" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-brand-primary transition-colors cursor-pointer">
-                        <option value="Team">Team Sport</option>
-                        <option value="Individual">Individual Sport</option>
-                    </select>
-                </div>
-
-                <div>
-                    <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wide ml-1 mb-1 block">Team Size</label>
-                    <input type="number" id="new-sport-size" placeholder="1 for Individual" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-brand-primary transition-colors" required>
-                </div>
-
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wide ml-1 mb-1 block">Jr Limit (Teams)</label>
-                        <input type="number" id="new-sport-limit-jr" placeholder="e.g. 16" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-brand-primary transition-colors">
-                    </div>
-                    <div>
-                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wide ml-1 mb-1 block">Sr Limit (Teams)</label>
-                        <input type="number" id="new-sport-limit-sr" placeholder="e.g. 32" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-brand-primary transition-colors">
-                    </div>
-                </div>
-
-                <button type="submit" class="w-full py-3.5 bg-black text-white font-bold rounded-xl shadow-lg active:scale-95 transition-transform mt-2 uppercase tracking-wide">Create Sport</button>
-            </form>
         </div>
     </div>
     
