@@ -757,7 +757,7 @@
         }
     }
 
-    window.loadTeamLocker = async function() {
+  window.loadTeamLocker = async function() {
         const container = document.getElementById('locker-list');
         container.innerHTML = '<p class="text-center text-gray-400 py-10">Loading your teams...</p>';
 
@@ -776,13 +776,25 @@
             const isCaptain = t.captain_id === currentUser.id;
             const isLocked = t.status === 'Locked';
             
+            // [MODIFIED] Fetch additional fields: last_name, class_name, mobile
             const { data: squad } = await supabaseClient
                 .from('team_members')
-                .select('users(first_name)')
+                .select('users(first_name, last_name, class_name, mobile)')
                 .eq('team_id', t.id)
                 .eq('status', 'Accepted');
                 
-            const squadHtml = squad.map(s => `<span class="text-[10px] bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded inline-block mr-1 mb-1 border border-gray-200 dark:border-gray-600">${s.users.first_name}</span>`).join('');
+            // [MODIFIED] Updated HTML rendering for squad members to show Class and Mobile
+            const squadHtml = squad.map(s => `
+                <div class="flex justify-between items-center bg-gray-50 dark:bg-gray-700/50 p-2 rounded-lg mb-1.5 border border-gray-100 dark:border-gray-600 w-full">
+                    <div class="flex flex-col">
+                        <span class="text-xs font-bold text-gray-800 dark:text-gray-200">${s.users.first_name} ${s.users.last_name || ''}</span>
+                        <span class="text-[10px] text-gray-500 dark:text-gray-400">${s.users.class_name || 'N/A'}</span>
+                    </div>
+                    <span class="text-[10px] font-mono font-medium text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-600 px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-500">
+                        ${s.users.mobile || 'No Mobile'}
+                    </span>
+                </div>
+            `).join('');
 
             let disableLock = false;
             if (!isLocked && isCaptain) {
@@ -803,8 +815,8 @@
                 </div>
                 
                 <div class="mb-4">
-                    <p class="text-[9px] text-gray-400 uppercase font-bold mb-1">Squad Members</p>
-                    <div class="flex flex-wrap">${squadHtml}</div>
+                    <p class="text-[9px] text-gray-400 uppercase font-bold mb-2">Squad Members</p>
+                    <div class="flex flex-col w-full">${squadHtml}</div>
                 </div>
                 
                 <div class="flex gap-2">
