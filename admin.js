@@ -27,6 +27,7 @@ let allTeamsCache = [];
 let dataCache = []; 
 let allRegistrationsCache = []; 
 let allUsersCache = [];
+let currentEditingTeamId = null; // New: For tracking team edits
 
 // Sorting State
 let currentSort = { key: 'created_at', asc: false };
@@ -561,17 +562,84 @@ function renderTeams(teams) {
                 <span class="text-[10px] font-bold uppercase bg-gray-100 px-2 py-1 rounded text-gray-500">${t.sports.name}</span>
                 <span class="text-[10px] font-bold uppercase ${t.status === 'Locked' ? 'text-red-500' : 'text-green-500'}">${t.status}</span>
             </div>
-            <h4 class="font-bold text-lg text-gray-900">${t.name}</h4>
+            <h4 class="font-bold text-lg text-gray-900 truncate" title="${t.name}">${t.name}</h4>
             <p class="text-xs text-gray-500 mb-4">Capt: ${t.captain?.first_name || 'Unknown'}</p>
-            <button onclick="viewTeamSquad('${t.id}', '${t.name}')" class="w-full py-2 bg-indigo-50 text-indigo-600 text-xs font-bold rounded-lg hover:bg-indigo-100 transition-colors">View Squad</button>
+            <button onclick="openTeamModal('${t.id}', '${t.name.replace(/'/g, "\\'")}')" class="w-full py-2 bg-indigo-50 text-indigo-600 text-xs font-bold rounded-lg hover:bg-indigo-100 transition-colors">
+                View Details & Edit
+            </button>
         </div>`).join('');
 }
 
-window.viewTeamSquad = async function(teamId, teamName) {
-    const { data: members } = await supabaseClient.from('team_members').select('users(first_name, last_name)').eq('team_id', teamId).eq('status', 'Accepted');
-    let msg = `Squad for ${teamName}:\n\n`;
-    if(members) members.forEach((m, i) => msg += `${i+1}. ${m.users.first_name} ${m.users.last_name}\n`);
-    alert(msg);
+// New Function: Open Modal for Editing Team & Viewing Squad
+window.openTeamModal = async function(teamId, teamName) {
+    currentEditingTeamId = teamId;
+    const modal = document.getElementById('team-modal');
+    const nameInput = document.getElementById('modal-team-name-input');
+    const tbody = document.getElementById('modal-squad-body');
+    const idDisplay = document.getElementById('modal-team-id-display');
+
+    if(!modal || !nameInput || !tbody) return;
+
+    // Reset State
+    nameInput.value = teamName;
+    idDisplay.innerText = `Team ID: ${teamId}`;
+    tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-gray-400">Loading squad details...</td></tr>';
+    
+    // Show Modal
+    modal.classList.remove('hidden');
+
+    // Fetch Squad with Extended Details
+    const { data: members, error } = await supabaseClient
+        .from('team_members')
+        .select(`
+            status,
+            users (first_name, last_name, class_name, mobile)
+        `)
+        .eq('team_id', teamId)
+        .eq('status', 'Accepted');
+
+    if (error) {
+        tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-red-400">Error loading members</td></tr>';
+        console.error(error);
+        return;
+    }
+
+    if (!members || members.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="p-8 text-center text-gray-400 font-bold">No members found in this squad.</td></tr>';
+        return;
+    }
+
+    // Render Rows with Contact & Class
+    tbody.innerHTML = members.map((m, i) => `
+        <tr class="hover:bg-gray-50 transition-colors group">
+            <td class="p-4 text-gray-400 font-mono text-xs">${i + 1}</td>
+            <td class="p-4 font-bold text-gray-900">${m.users.first_name} ${m.users.last_name}</td>
+            <td class="p-4 text-xs font-bold text-gray-500 uppercase">${m.users.class_name || '-'}</td>
+            <td class="p-4 text-right font-mono text-gray-600 text-xs">${m.users.mobile || '-'}</td>
+        </tr>
+    `).join('');
+}
+
+// New Function: Save Team Name Change
+window.saveTeamNameUpdate = async function() {
+    const newName = document.getElementById('modal-team-name-input').value.trim();
+    if(!currentEditingTeamId) return;
+    if(!newName) return showToast("Team name cannot be empty", "error");
+
+    const { error } = await supabaseClient
+        .from('teams')
+        .update({ name: newName })
+        .eq('id', currentEditingTeamId);
+
+    if(error) {
+        showToast("Update Failed: " + error.message, "error");
+    } else {
+        showToast("Team Name Updated!", "success");
+        logAdminAction('TEAM_UPDATE', `Renamed team ${currentEditingTeamId} to ${newName}`);
+        
+        // Refresh the list in the background
+        loadTeamsList(); 
+    }
 }
 
 // --- 15. UTILS (MODALS & TOASTS) ---
