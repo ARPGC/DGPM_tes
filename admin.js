@@ -4,57 +4,47 @@
 
 // --- 1. CONFIGURATION & CLIENTS ---
 
-// Safety Check for Configs
 if (typeof CONFIG === 'undefined' || typeof CONFIG_REALTIME === 'undefined') {
-    console.error("CRITICAL ERROR: Configuration files missing. Ensure config.js and config2.js are loaded.");
+    console.error("CRITICAL ERROR: Config missing.");
     alert("System Error: Config missing. Check console.");
 }
 
-// A. MAIN PROJECT (Project A) - Read/Write for Admin, Auth, Official Records
-const supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
+// FIX: Use a unique variable name 'adminClient' to avoid conflicts with superviser.js
+const adminClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
 
-// B. REALTIME PROJECT (Project B) - Relay for Live Student View
-// We use the SERVICE KEY here because Admins need to WRITE to the live relay.
-const realtimeClient = window.supabase.createClient(CONFIG_REALTIME.url, CONFIG_REALTIME.serviceKey);
+// Realtime Client
+const adminRtClient = window.supabase.createClient(CONFIG_REALTIME.url, CONFIG_REALTIME.serviceKey);
 
 // --- 2. STATE MANAGEMENT ---
 let currentUser = null;
 let currentView = 'dashboard';
 let currentMatchViewFilter = 'Scheduled'; 
 
-// Data Caches (for Search & Export)
+// Data Caches
 let allTeamsCache = []; 
 let dataCache = []; 
 let allRegistrationsCache = []; 
-let allUsersCache = [];
-let currentEditingTeamId = null; // New: For tracking team edits
+let currentEditingTeamId = null;
 
-// Sorting State
+// Sorting
 let currentSort = { key: 'created_at', asc: false };
 
 const DEFAULT_AVATAR = "https://t4.ftcdn.net/jpg/05/89/93/27/360_F_589932782_vQAEAZhHnq1QCGu5ikwrYaQD0Mmurm0N.jpg";
 
 // --- 3. INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', async () => {
-    // Initialize UI Libs
     if(window.lucide) lucide.createIcons();
     injectToastContainer();
-
-    // Authenticate
     await checkAdminAuth();
-    
-    // Load Default View
     switchView('dashboard');
 });
 
-// --- 4. AUTHENTICATION & SECURITY ---
-
+// --- 4. AUTHENTICATION ---
 async function checkAdminAuth() {
-    const { data: { session } } = await supabaseClient.auth.getSession();
+    const { data: { session } } = await adminClient.auth.getSession();
     if (!session) { window.location.href = 'login.html'; return; }
 
-    // Verify Admin Role
-    const { data: user } = await supabaseClient
+    const { data: user } = await adminClient
         .from('users')
         .select('role, email')
         .eq('id', session.user.id)
@@ -70,52 +60,29 @@ async function checkAdminAuth() {
     loadDashboardStats();
 }
 
-// FIXED: Signout Logic
-async function adminLogout() {
-    try {
-        await logAdminAction('LOGOUT', 'Admin initiated sign out');
-        await supabaseClient.auth.signOut();
-        localStorage.clear(); // Clear any local artifacts
-        window.location.href = 'login.html';
-    } catch (error) {
-        console.error("Logout Error:", error);
-        window.location.href = 'login.html'; // Fallback redirect
-    }
+window.adminLogout = async function() {
+    await adminClient.auth.signOut();
+    window.location.href = 'login.html';
 }
 
-// --- 5. LOGGING SYSTEM ---
-// Kept active for background recording
 async function logAdminAction(action, details) {
     console.log(`[ADMIN LOG] ${action}: ${details}`);
     try {
-        await supabaseClient.from('admin_logs').insert({
-            admin_email: currentUser.email,
+        await adminClient.from('admin_logs').insert({
+            admin_email: currentUser?.email || 'unknown',
             action: action,
             details: details
         });
-    } catch (err) {
-        console.error("Logging failed:", err);
-    }
+    } catch (err) { console.error(err); }
 }
 
-// --- 6. REALTIME SYNC ENGINE (THE BRIDGE) ---
-// This function copies data from Main DB -> Realtime DB
+// --- 5. REALTIME SYNC ---
 async function syncToRealtime(matchId) {
     console.log(`[SYNC] Syncing Match ${matchId}...`);
+    const { data: match } = await adminClient.from('matches').select('*, sports(name)').eq('id', matchId).single();
     
-    // 1. Get Fresh Data from Main DB
-    const { data: match, error } = await supabaseClient
-        .from('matches')
-        .select('*, sports(name)')
-        .eq('id', matchId)
-        .single();
+    if (!match) return;
 
-    if (error || !match) {
-        console.error("Sync Error: Data not found in Main DB", error);
-        return;
-    }
-
-    // 2. Format Payload for Relay DB
     const payload = {
         id: match.id,
         sport_name: match.sports?.name || 'Unknown',
@@ -130,64 +97,47 @@ async function syncToRealtime(matchId) {
         location: match.location,
         start_time: match.start_time,
         winner_text: match.winner_text,
-        winners_data: match.winners_data, // JSON: {gold, silver, bronze}
+        winners_data: match.winners_data,
         updated_at: new Date()
     };
 
-    // 3. Upsert to Realtime DB
-    const { error: rtError } = await realtimeClient
-        .from('live_matches')
-        .upsert(payload);
-
-    if (rtError) console.error("Sync Failed:", rtError);
-    else console.log("[SYNC] Success!");
+    await adminRtClient.from('live_matches').upsert(payload);
 }
 
-// --- 7. VIEW NAVIGATION & ROUTING ---
+// --- 6. NAVIGATION ---
 window.switchView = function(viewId) {
     currentView = viewId;
     
-    // 1. UI Toggling
     document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
     const target = document.getElementById('view-' + viewId);
     if(target) {
         target.classList.remove('hidden');
-        target.classList.remove('animate-fade-in');
-        void target.offsetWidth; // Trigger Reflow
         target.classList.add('animate-fade-in');
     }
 
-    // 2. Sidebar State
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
     const navBtn = document.getElementById('nav-' + viewId);
     if(navBtn) navBtn.classList.add('active');
 
-    // 3. Header Title
     const titleEl = document.getElementById('page-title');
     if(titleEl) titleEl.innerText = viewId.charAt(0).toUpperCase() + viewId.slice(1);
 
-    // 4. Export Buttons Toggle
     const globalActions = document.getElementById('global-actions');
     if(globalActions) {
-        if (['users', 'teams', 'matches', 'registrations'].includes(viewId)) {
-            globalActions.classList.remove('hidden');
-        } else {
-            globalActions.classList.add('hidden');
-        }
+        if (['users', 'teams', 'matches', 'registrations'].includes(viewId)) globalActions.classList.remove('hidden');
+        else globalActions.classList.add('hidden');
     }
 
-    // 5. Data Loaders
-    dataCache = []; // Clear export cache
+    dataCache = [];
     if(viewId === 'users') loadUsersList();
     if(viewId === 'matches') { setupMatchFilters(); loadMatches('Scheduled'); }
     if(viewId === 'teams') loadTeamsList();
     if(viewId === 'registrations') loadRegistrationsList();
 }
 
-// --- 8. EXPORT SYSTEM ---
+// --- 7. EXPORT ---
 window.exportCurrentPage = function(type) {
     if (!dataCache || dataCache.length === 0) return showToast("No data to export", "error");
-    
     const filename = `urja_${currentView}_${new Date().toISOString().split('T')[0]}`;
 
     if (type === 'excel') {
@@ -195,65 +145,40 @@ window.exportCurrentPage = function(type) {
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
         XLSX.writeFile(wb, `${filename}.xlsx`);
-        logAdminAction('EXPORT_EXCEL', `Exported ${currentView}`);
-    } 
-    else if (type === 'pdf') {
+    } else if (type === 'pdf') {
         const { jsPDF } = window.jspdf;
-        const doc = new jsPDF('l'); // Landscape
-        
-        // Extract headers dynamically
+        const doc = new jsPDF('l');
         const headers = Object.keys(dataCache[0]).map(k => k.toUpperCase());
         const rows = dataCache.map(obj => Object.values(obj).map(v => String(v)));
-
         doc.setFontSize(18);
         doc.text(`URJA 2026 - ${currentView.toUpperCase()}`, 14, 22);
-        
-        doc.autoTable({
-            head: [headers],
-            body: rows,
-            startY: 30,
-            theme: 'grid',
-            styles: { fontSize: 8 }
-        });
-
+        doc.autoTable({ head: [headers], body: rows, startY: 30, theme: 'grid', styles: { fontSize: 8 } });
         doc.save(`${filename}.pdf`);
-        logAdminAction('EXPORT_PDF', `Exported ${currentView}`);
     }
 }
 
-// --- 9. DASHBOARD STATS ---
+// --- 8. DASHBOARD STATS ---
 async function loadDashboardStats() {
-    const { count: userCount } = await supabaseClient.from('users').select('*', { count: 'exact', head: true });
-    const { count: regCount } = await supabaseClient.from('registrations').select('*', { count: 'exact', head: true });
-    const { count: teamCount } = await supabaseClient.from('teams').select('*', { count: 'exact', head: true });
+    const { count: userCount } = await adminClient.from('users').select('*', { count: 'exact', head: true });
+    const { count: regCount } = await adminClient.from('registrations').select('*', { count: 'exact', head: true });
+    const { count: teamCount } = await adminClient.from('teams').select('*', { count: 'exact', head: true });
     
-    const uEl = document.getElementById('dash-total-users');
-    const rEl = document.getElementById('dash-total-regs');
-    const tEl = document.getElementById('dash-total-teams');
-
-    if(uEl) uEl.innerText = userCount || 0;
-    if(rEl) rEl.innerText = regCount || 0;
-    if(tEl) tEl.innerText = teamCount || 0;
+    document.getElementById('dash-total-users').innerText = userCount || 0;
+    document.getElementById('dash-total-regs').innerText = regCount || 0;
+    document.getElementById('dash-total-teams').innerText = teamCount || 0;
 }
 
-// --- 10. MATCH ACTIONS (End Performance & Start Match) ---
-
+// --- 9. MATCH ACTIONS ---
 window.endPerformanceEvent = async function(matchId) {
-    if (!confirm("Are you sure? This will Calculate Winners (1,2,3) and END the event.")) return;
+    if (!confirm("End event and calculate winners?")) return;
 
-    const { data: match } = await supabaseClient.from('matches').select('performance_data, sports(unit)').eq('id', matchId).single();
-    let arr = match.performance_data;
+    const { data: match } = await adminClient.from('matches').select('performance_data, sports(unit)').eq('id', matchId).single();
+    let arr = match.performance_data || [];
     const unit = match.sports.unit;
 
     let validEntries = arr.filter(p => p.result && p.result.trim() !== '');
-    
-    // Sort Logic
     const isDistance = unit === 'Meters' || unit === 'Points';
-    validEntries.sort((a, b) => {
-        const valA = parseFloat(a.result) || 0;
-        const valB = parseFloat(b.result) || 0;
-        return isDistance ? (valB - valA) : (valA - valB);
-    });
+    validEntries.sort((a, b) => isDistance ? (parseFloat(b.result) - parseFloat(a.result)) : (parseFloat(a.result) - parseFloat(b.result)));
 
     let winners = { gold: null, silver: null, bronze: null };
     validEntries.forEach((p, i) => {
@@ -263,272 +188,29 @@ window.endPerformanceEvent = async function(matchId) {
         if(i === 2) winners.bronze = p.name;
     });
 
-    const finalData = [...validEntries, ...arr.filter(p => !p.result || p.result.trim() === '')];
     const winnerText = `Gold: ${winners.gold || '-'}, Silver: ${winners.silver || '-'}, Bronze: ${winners.bronze || '-'}`;
-
-    const { error } = await supabaseClient.from('matches').update({ 
-        performance_data: finalData,
+    await adminClient.from('matches').update({ 
+        performance_data: [...validEntries, ...arr.filter(p => !p.result)],
         status: 'Completed',
         winner_text: winnerText,
         winners_data: winners,
         is_live: false 
     }).eq('id', matchId);
 
-    if(error) showToast("Error: " + error.message, "error");
-    else {
-        showToast("Event Ended!", "success");
-        logAdminAction('END_EVENT', `Ended Match ID ${matchId}`);
-        // Sync Final State
-        syncToRealtime(matchId);
-        loadMatches(currentMatchViewFilter); 
-    }
-}
-
-// --- 11. REGISTRATIONS LIST VIEW ---
-async function loadRegistrationsList() {
-    const tbody = document.getElementById('registrations-table-body');
-    if(!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center">Loading registrations...</td></tr>';
-
-    const { data: regs, error } = await supabaseClient
-        .from('registrations')
-        .select(`
-            id, created_at,
-            users (first_name, last_name, student_id, class_name, gender, mobile, email),
-            sports (name)
-        `)
-        .order('created_at', { ascending: false });
-
-    if(error) {
-        console.error(error);
-        return showToast("Failed to load registrations", "error");
-    }
-
-    // Flatten Data
-    allRegistrationsCache = regs.map(r => ({
-        name: `${r.users.first_name} ${r.users.last_name}`,
-        student_id: r.users.student_id,
-        class: r.users.class_name,
-        category: (['FYJC', 'SYJC'].includes(r.users.class_name)) ? 'Junior' : 'Senior',
-        gender: r.users.gender,
-        sport: r.sports.name,
-        mobile: r.users.mobile,
-        email: r.users.email,
-        date: new Date(r.created_at).toLocaleDateString()
-    }));
-
-    // Populate Filters
-    const sports = [...new Set(allRegistrationsCache.map(r => r.sport))].sort();
-    const sportSelect = document.getElementById('filter-reg-sport');
-    if(sportSelect && sportSelect.children.length <= 1) {
-        sportSelect.innerHTML = `<option value="">All Sports</option>` + sports.map(s => `<option value="${s}">${s}</option>`).join('');
-    }
-
-    renderRegistrations(allRegistrationsCache);
-}
-
-function renderRegistrations(data) {
-    const tbody = document.getElementById('registrations-table-body');
-    const countEl = document.getElementById('reg-count');
-    if(!tbody) return;
-
-    if(countEl) countEl.innerText = data.length;
-    dataCache = data;
-
-    if(data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="p-8 text-center text-gray-400 font-bold">No records found.</td></tr>';
-        return;
-    }
-
-    tbody.innerHTML = data.map(r => `
-        <tr class="border-b border-gray-50 hover:bg-indigo-50/30 transition-colors">
-            <td class="p-4">
-                <div class="font-bold text-gray-900">${r.name}</div>
-                <div class="text-xs text-gray-500">${r.email}</div>
-            </td>
-            <td class="p-4"><span class="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs font-bold uppercase">${r.sport}</span></td>
-            <td class="p-4 text-sm text-gray-600 font-medium">${r.class} <span class="text-xs text-gray-400">(${r.student_id})</span></td>
-            <td class="p-4 text-sm text-gray-600">${r.gender}</td>
-            <td class="p-4 text-sm font-mono text-gray-600">${r.mobile}</td>
-            <td class="p-4 text-right text-xs text-gray-400 font-bold">${r.date}</td>
-        </tr>
-    `).join('');
-}
-
-window.filterRegistrations = function() {
-    const search = document.getElementById('reg-search').value.toLowerCase();
-    const sport = document.getElementById('filter-reg-sport').value;
-    const gender = document.getElementById('filter-reg-gender').value;
-    const cls = document.getElementById('filter-reg-class').value;
-
-    const filtered = allRegistrationsCache.filter(r => {
-        const matchesSearch = r.name.toLowerCase().includes(search) || r.student_id.toLowerCase().includes(search);
-        const matchesSport = sport === "" || r.sport === sport;
-        const matchesGender = gender === "" || r.gender === gender;
-        const matchesClass = cls === "" || r.category === cls;
-        return matchesSearch && matchesSport && matchesGender && matchesClass;
-    });
-
-    renderRegistrations(filtered);
-}
-
-window.sortRegistrations = function(key) {
-    currentSort.asc = (currentSort.key === key) ? !currentSort.asc : true;
-    currentSort.key = key;
-
-    const sorted = [...dataCache].sort((a, b) => {
-        const valA = a[key].toString().toLowerCase();
-        const valB = b[key].toString().toLowerCase();
-        if(valA < valB) return currentSort.asc ? -1 : 1;
-        if(valA > valB) return currentSort.asc ? 1 : -1;
-        return 0;
-    });
-
-    renderRegistrations(sorted);
-}
-
-window.resetRegFilters = function() {
-    document.getElementById('reg-search').value = '';
-    document.getElementById('filter-reg-sport').value = '';
-    document.getElementById('filter-reg-gender').value = '';
-    document.getElementById('filter-reg-class').value = '';
-    renderRegistrations(allRegistrationsCache);
-}
-
-// --- 12. MATCH LIST & FILTER ---
-window.loadMatches = async function(statusFilter = 'Scheduled') {
-    currentMatchViewFilter = statusFilter;
-    
-    // Update Tab Styles
-    document.querySelectorAll('#match-filter-tabs button').forEach(btn => {
-        if(btn.innerText.includes(statusFilter)) btn.className = "px-4 py-2 text-sm font-bold text-black border-b-2 border-black";
-        else btn.className = "px-4 py-2 text-sm font-bold text-gray-500 hover:text-black";
-    });
-
-    const container = document.getElementById('matches-grid');
-    if(!container) return;
-    container.innerHTML = '<p class="col-span-3 text-center text-gray-400 py-10">Loading matches...</p>';
-
-    const { data: matches } = await supabaseClient
-        .from('matches')
-        .select('*, sports(name, is_performance, unit)')
-        .eq('status', statusFilter)
-        .order('start_time', { ascending: true });
-
-    if (!matches || matches.length === 0) {
-        container.innerHTML = `<p class="col-span-3 text-center text-gray-400 py-10">No ${statusFilter} matches found.</p>`;
-        return;
-    }
-
-    dataCache = matches.map(m => ({ Round: m.round_number, Sport: m.sports.name, Team1: m.team1_name, Team2: m.team2_name, Status: m.status }));
-
-    container.innerHTML = matches.map(m => `
-        <div class="w-full bg-white p-5 rounded-3xl border border-gray-200 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
-            <div class="flex justify-between items-start mb-4">
-                 <div class="flex items-center">
-                    ${m.status==='Live' ? `<span class="bg-red-50 text-red-600 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider animate-pulse">LIVE</span>` : `<span class="bg-gray-100 text-gray-500 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider">${new Date(m.start_time).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>`}
-                 </div>
-                 <span class="text-xs text-gray-500 font-bold uppercase tracking-wider">${m.sports.name}</span>
-            </div>
-            
-            ${m.sports.is_performance ? 
-                `<div class="text-center py-2"><h4 class="font-black text-xl text-gray-900">${m.team1_name}</h4><p class="text-xs text-gray-400 font-bold uppercase">Performance Event</p></div>`
-            : 
-                `<div class="flex items-center justify-between w-full mb-4 px-2">
-                    <h4 class="font-bold text-lg text-gray-900 leading-tight text-left w-1/3 truncate">${m.team1_name}</h4>
-                    <span class="text-[10px] font-bold text-gray-300 px-2">VS</span>
-                    <h4 class="font-bold text-lg text-gray-900 leading-tight text-right w-1/3 truncate">${m.team2_name}</h4>
-                </div>`
-            }
-
-            <div class="border-t border-gray-100 pt-4 flex items-center justify-between gap-3">
-                 <div class="text-xs font-bold text-gray-400 flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3"></i> ${m.location || 'N/A'}</div>
-                 <div>
-                    ${m.sports.is_performance && m.status === 'Live' ? 
-                        `<button onclick="endPerformanceEvent('${m.id}')" class="px-3 py-1.5 bg-red-500 text-white text-xs font-bold rounded-lg hover:bg-red-600 shadow-sm transition-colors">End Event</button>`
-                    : 
-                        m.status === 'Scheduled' ? 
-                            `<button onclick="startMatch('${m.id}')" class="px-3 py-1.5 bg-green-500 text-white text-xs font-bold rounded-lg hover:bg-green-600 shadow-sm transition-colors">Start Match</button>` 
-                        : `<span class="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-1 rounded border border-gray-200">${m.winner_text || 'Completed'}</span>`
-                    }
-                 </div>
-            </div>
-        </div>
-    `).join('');
-    if(window.lucide) lucide.createIcons();
+    showToast("Event Ended!", "success");
+    syncToRealtime(matchId);
+    loadMatches(currentMatchViewFilter); 
 }
 
 window.startMatch = async function(matchId) {
-    if(!confirm("Start this match now? It will appear as LIVE.")) return;
-    await supabaseClient.from('matches').update({ status: 'Live', is_live: true }).eq('id', matchId);
-    showToast("Match is now LIVE!", "success");
-    logAdminAction('MATCH_START', `Started match ID ${matchId}`);
+    if(!confirm("Start this match now?")) return;
+    await adminClient.from('matches').update({ status: 'Live', is_live: true }).eq('id', matchId);
+    showToast("Match is LIVE!", "success");
     syncToRealtime(matchId);
     loadMatches('Live');
 }
 
-// --- 13. USERS & TEAMS MANAGEMENT ---
-async function loadUsersList() {
-    const tbody = document.getElementById('users-table-body');
-    if(!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center">Loading...</td></tr>';
-    const { data: users } = await supabaseClient.from('users').select('*').order('created_at', { ascending: false });
-    const { data: sports } = await supabaseClient.from('sports').select('id, name');
-    dataCache = users;
-    
-    tbody.innerHTML = users.map(u => {
-        const sportOptions = sports.map(s => `<option value="${s.id}" ${u.assigned_sport_id === s.id ? 'selected' : ''}>${s.name}</option>`).join('');
-        return `
-        <tr class="border-b border-gray-50 hover:bg-gray-50">
-            <td class="p-4 flex items-center gap-3">
-                <img src="${u.avatar_url || DEFAULT_AVATAR}" class="w-8 h-8 rounded-full object-cover bg-gray-200">
-                <div><div class="font-bold text-gray-900">${u.first_name} ${u.last_name}</div><div class="text-xs text-gray-500">${u.email}</div></div>
-            </td>
-            <td class="p-4"><span class="px-2 py-1 rounded text-xs font-bold ${u.role==='admin'?'bg-purple-50 text-purple-600': u.role==='volunteer'?'bg-indigo-50 text-indigo-600':'bg-gray-100 text-gray-600'} uppercase">${u.role}</span></td>
-            <td class="p-4 text-gray-600">${u.class_name || '-'} <span class="text-xs text-gray-400">(${u.student_id})</span></td>
-            <td class="p-4">${u.role === 'volunteer' ? `<select onchange="assignVolunteerSport('${u.id}', this.value)" class="p-1 text-xs border rounded bg-white w-full"><option value="">-- Assign --</option>${sportOptions}</select>` : '-'}</td>
-            <td class="p-4 text-right flex justify-end gap-2">
-                ${u.role !== 'admin' && u.role !== 'volunteer' ? `<button onclick="promoteUser('${u.id}')" class="text-xs bg-indigo-50 text-indigo-600 px-3 py-1 rounded-lg font-bold hover:bg-indigo-100">Make Vol</button>` : ''}
-                <button onclick="resetUserPassword('${u.id}', '${u.first_name}')" class="text-xs bg-red-50 text-red-600 px-3 py-1 rounded-lg font-bold hover:bg-red-100 border border-red-100">Reset</button>
-            </td>
-        </tr>`;
-    }).join('');
-}
-
-window.promoteUser = async function(userId) {
-    if(!confirm("Promote to Volunteer?")) return;
-    await supabaseClient.from('users').update({ role: 'volunteer' }).eq('id', userId);
-    logAdminAction('USER_PROMOTE', `Promoted user ${userId} to Volunteer`);
-    showToast("Promoted!", "success");
-    loadUsersList();
-}
-
-window.assignVolunteerSport = async function(userId, sportId) {
-    await supabaseClient.from('users').update({ assigned_sport_id: sportId || null }).eq('id', userId);
-    logAdminAction('USER_ASSIGN_SPORT', `Assigned sport ${sportId} to user ${userId}`);
-    showToast("Assigned!", "success");
-}
-
-window.resetUserPassword = async function(userId, name) {
-    if(!confirm(`Reset ${name}'s password to 'student'?`)) return;
-    const { error } = await supabaseClient.rpc('admin_reset_password', { target_user_id: userId });
-    
-    if(error) {
-        showToast("Error resetting password", "error");
-    } else {
-        logAdminAction('USER_PASS_RESET', `Reset password for user ${userId}`);
-        showToast("Password Reset", "success");
-    }
-}
-
-window.filterUsers = function() {
-    const q = document.getElementById('user-search').value.toLowerCase();
-    document.querySelectorAll('#users-table-body tr').forEach(r => {
-        r.style.display = r.innerText.toLowerCase().includes(q) ? '' : 'none';
-    });
-}
-
-// --- 14. TEAMS ---
+// --- 10. TEAMS (The Fix) ---
 async function loadTeamsList() {
     const grid = document.getElementById('teams-grid');
     if(!grid) return;
@@ -542,9 +224,11 @@ async function loadTeamsList() {
         grid.parentElement.insertBefore(div, grid);
     }
 
-    const { data: teams } = await supabaseClient.from('teams').select('*, sports(name), captain:users!captain_id(first_name, last_name)').order('created_at', { ascending: false });
+    const { data: teams } = await adminClient.from('teams')
+        .select('*, sports(name), captain:users!captain_id(first_name, last_name)')
+        .order('created_at', { ascending: false });
+
     allTeamsCache = teams || [];
-    dataCache = teams;
     renderTeams(allTeamsCache);
 }
 
@@ -556,10 +240,12 @@ window.filterTeamsList = function() {
 function renderTeams(teams) {
     const grid = document.getElementById('teams-grid');
     if(teams.length === 0) { grid.innerHTML = '<p class="col-span-3 text-center text-gray-400">No teams found.</p>'; return; }
+    
+    // IMPORTANT: Note the button calls openTeamModal, NOT viewTeamSquad
     grid.innerHTML = teams.map(t => `
         <div class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
             <div class="flex justify-between items-start mb-3">
-                <span class="text-[10px] font-bold uppercase bg-gray-100 px-2 py-1 rounded text-gray-500">${t.sports.name}</span>
+                <span class="text-[10px] font-bold uppercase bg-gray-100 px-2 py-1 rounded text-gray-500">${t.sports?.name || 'Sport'}</span>
                 <span class="text-[10px] font-bold uppercase ${t.status === 'Locked' ? 'text-red-500' : 'text-green-500'}">${t.status}</span>
             </div>
             <h4 class="font-bold text-lg text-gray-900 truncate" title="${t.name}">${t.name}</h4>
@@ -570,7 +256,8 @@ function renderTeams(teams) {
         </div>`).join('');
 }
 
-// New Function: Open Modal for Editing Team & Viewing Squad
+// --- NEW MODAL FUNCTIONS ---
+
 window.openTeamModal = async function(teamId, teamName) {
     currentEditingTeamId = teamId;
     const modal = document.getElementById('team-modal');
@@ -578,47 +265,33 @@ window.openTeamModal = async function(teamId, teamName) {
     const tbody = document.getElementById('modal-squad-body');
     const idDisplay = document.getElementById('modal-team-id-display');
 
-    if(!modal || !nameInput || !tbody) return;
+    if(!modal) { alert("Error: Modal HTML not found in admin.html"); return; }
 
-    // Reset State
     nameInput.value = teamName;
     idDisplay.innerText = `Team ID: ${teamId}`;
     tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-400">Loading squad details...</td></tr>';
     
-    // Show Modal
     modal.classList.remove('hidden');
 
-    // Fetch Squad with Extended Details & User ID
-    const { data: members, error } = await supabaseClient
+    const { data: members, error } = await adminClient
         .from('team_members')
-        .select(`
-            status,
-            user_id,
-            users (first_name, last_name, class_name, mobile)
-        `)
+        .select(`status, user_id, users (first_name, last_name, class_name, mobile)`)
         .eq('team_id', teamId)
         .eq('status', 'Accepted');
 
-    if (error) {
-        tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-red-400">Error loading members</td></tr>';
-        console.error(error);
+    if (error || !members || members.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-gray-400 font-bold">No members found.</td></tr>';
         return;
     }
 
-    if (!members || members.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-gray-400 font-bold">No members found in this squad.</td></tr>';
-        return;
-    }
-
-    // Render Rows with Contact & Class & Remove Button
     tbody.innerHTML = members.map((m, i) => `
-        <tr class="hover:bg-gray-50 transition-colors group">
+        <tr class="hover:bg-gray-50 transition-colors border-b border-gray-50">
             <td class="p-4 text-gray-400 font-mono text-xs">${i + 1}</td>
             <td class="p-4 font-bold text-gray-900">${m.users.first_name} ${m.users.last_name}</td>
             <td class="p-4 text-xs font-bold text-gray-500 uppercase">${m.users.class_name || '-'}</td>
             <td class="p-4 text-right font-mono text-gray-600 text-xs">${m.users.mobile || '-'}</td>
             <td class="p-4 text-right">
-                <button onclick="removeTeamMember('${m.user_id}')" class="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-1.5 rounded-lg transition-colors" title="Remove Member">
+                <button onclick="removeTeamMember('${m.user_id}')" class="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-1.5 rounded-lg transition-colors">
                    <i data-lucide="trash" class="w-4 h-4"></i>
                 </button>
             </td>
@@ -627,97 +300,223 @@ window.openTeamModal = async function(teamId, teamName) {
     if(window.lucide) lucide.createIcons();
 }
 
-// New Function: Remove a member from the team
 window.removeTeamMember = async function(userId) {
-    if(!confirm("Are you sure you want to remove this member from the team?")) return;
-    
-    const { error } = await supabaseClient
-        .from('team_members')
-        .delete()
-        .eq('team_id', currentEditingTeamId)
-        .eq('user_id', userId);
-
-    if(error) {
-        showToast("Error removing member: " + error.message, "error");
-    } else {
-        showToast("Member removed successfully", "success");
-        // Reload modal content to show updated list
+    if(!confirm("Remove this member from the team?")) return;
+    const { error } = await adminClient.from('team_members').delete().eq('team_id', currentEditingTeamId).eq('user_id', userId);
+    if(error) showToast("Error: " + error.message, "error");
+    else {
+        showToast("Member removed", "success");
         const nameInput = document.getElementById('modal-team-name-input');
         openTeamModal(currentEditingTeamId, nameInput.value);
     }
 }
 
-// New Function: Save Team Name Change
 window.saveTeamNameUpdate = async function() {
     const newName = document.getElementById('modal-team-name-input').value.trim();
-    if(!currentEditingTeamId) return;
-    if(!newName) return showToast("Team name cannot be empty", "error");
+    if(!currentEditingTeamId || !newName) return;
 
-    const { error } = await supabaseClient
-        .from('teams')
-        .update({ name: newName })
-        .eq('id', currentEditingTeamId);
-
-    if(error) {
-        showToast("Update Failed: " + error.message, "error");
-    } else {
+    const { error } = await adminClient.from('teams').update({ name: newName }).eq('id', currentEditingTeamId);
+    if(error) showToast("Failed: " + error.message, "error");
+    else {
         showToast("Team Name Updated!", "success");
-        logAdminAction('TEAM_UPDATE', `Renamed team ${currentEditingTeamId} to ${newName}`);
-        
-        // Refresh the list in the background
         loadTeamsList(); 
     }
 }
 
-// New Function: Delete Entire Team
 window.deleteTeam = async function() {
     if(!currentEditingTeamId) return;
-    const confirmMsg = "DANGER: Are you sure you want to DELETE this ENTIRE TEAM?\n\nThis action cannot be undone and will remove all members from the team.";
-    if(!confirm(confirmMsg)) return;
+    if(!confirm("DANGER: Delete this ENTIRE TEAM? This cannot be undone.")) return;
 
-    // Supabase usually cascades deletes, but if not, team_members will be orphaned.
-    // We will attempt to delete the team directly.
-    const { error } = await supabaseClient
-        .from('teams')
-        .delete()
-        .eq('id', currentEditingTeamId);
-
-    if(error) {
-        showToast("Failed to delete team: " + error.message, "error");
-    } else {
-        showToast("Team Deleted Successfully", "success");
-        logAdminAction('TEAM_DELETE', `Deleted team ID ${currentEditingTeamId}`);
+    const { error } = await adminClient.from('teams').delete().eq('id', currentEditingTeamId);
+    if(error) showToast("Failed: " + error.message, "error");
+    else {
+        showToast("Team Deleted", "success");
         closeModal('team-modal');
-        loadTeamsList(); // Refresh dashboard
+        loadTeamsList();
     }
 }
 
-// --- 15. UTILS (MODALS & TOASTS) ---
-window.closeModal = (id) => document.getElementById(id).classList.add('hidden');
+// --- 11. REGISTRATIONS & USERS ---
+async function loadRegistrationsList() {
+    const tbody = document.getElementById('registrations-table-body');
+    if(!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center">Loading...</td></tr>';
 
-function setupMatchFilters() {
-    const container = document.getElementById('view-matches');
-    if(!document.getElementById('match-filter-tabs')) {
+    const { data: regs } = await adminClient.from('registrations')
+        .select(`id, created_at, users (first_name, last_name, student_id, class_name, gender, mobile, email), sports (name)`)
+        .order('created_at', { ascending: false });
+
+    allRegistrationsCache = regs.map(r => ({
+        name: `${r.users.first_name} ${r.users.last_name}`,
+        student_id: r.users.student_id,
+        class: r.users.class_name,
+        category: (['FYJC', 'SYJC'].includes(r.users.class_name)) ? 'Junior' : 'Senior',
+        gender: r.users.gender,
+        sport: r.sports.name,
+        mobile: r.users.mobile,
+        email: r.users.email,
+        date: new Date(r.created_at).toLocaleDateString()
+    }));
+
+    // Setup Filters
+    const sports = [...new Set(allRegistrationsCache.map(r => r.sport))].sort();
+    const sportSelect = document.getElementById('filter-reg-sport');
+    if(sportSelect && sportSelect.children.length <= 1) {
+        sportSelect.innerHTML = `<option value="">All Sports</option>` + sports.map(s => `<option value="${s}">${s}</option>`).join('');
+    }
+    renderRegistrations(allRegistrationsCache);
+}
+
+function renderRegistrations(data) {
+    const tbody = document.getElementById('registrations-table-body');
+    if(!tbody) return;
+    document.getElementById('reg-count').innerText = data.length;
+    dataCache = data;
+
+    tbody.innerHTML = data.map(r => `
+        <tr class="border-b border-gray-50 hover:bg-gray-50">
+            <td class="p-4">
+                <div class="font-bold text-gray-900">${r.name}</div>
+                <div class="text-xs text-gray-500">${r.email}</div>
+            </td>
+            <td class="p-4"><span class="bg-gray-100 px-2 py-1 rounded text-xs font-bold">${r.sport}</span></td>
+            <td class="p-4 text-sm">${r.class} <span class="text-xs text-gray-400">(${r.student_id})</span></td>
+            <td class="p-4 text-sm">${r.gender}</td>
+            <td class="p-4 text-sm font-mono">${r.mobile}</td>
+            <td class="p-4 text-right text-xs text-gray-400">${r.date}</td>
+        </tr>`).join('');
+}
+
+window.filterRegistrations = function() {
+    const search = document.getElementById('reg-search').value.toLowerCase();
+    const sport = document.getElementById('filter-reg-sport').value;
+    const gender = document.getElementById('filter-reg-gender').value;
+    const cls = document.getElementById('filter-reg-class').value;
+
+    const filtered = allRegistrationsCache.filter(r => {
+        return (r.name.toLowerCase().includes(search) || r.student_id.toLowerCase().includes(search)) &&
+               (sport === "" || r.sport === sport) &&
+               (gender === "" || r.gender === gender) &&
+               (cls === "" || r.category === cls);
+    });
+    renderRegistrations(filtered);
+}
+
+window.resetRegFilters = function() {
+    document.getElementById('reg-search').value = '';
+    document.getElementById('filter-reg-sport').value = '';
+    document.getElementById('filter-reg-gender').value = '';
+    document.getElementById('filter-reg-class').value = '';
+    renderRegistrations(allRegistrationsCache);
+}
+
+// --- USERS ---
+async function loadUsersList() {
+    const tbody = document.getElementById('users-table-body');
+    if(!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center">Loading...</td></tr>';
+    
+    const { data: users } = await adminClient.from('users').select('*').order('created_at', { ascending: false });
+    const { data: sports } = await adminClient.from('sports').select('id, name');
+    dataCache = users;
+    
+    tbody.innerHTML = users.map(u => {
+        const sportOptions = sports.map(s => `<option value="${s.id}" ${u.assigned_sport_id === s.id ? 'selected' : ''}>${s.name}</option>`).join('');
+        return `
+        <tr class="border-b border-gray-50 hover:bg-gray-50">
+            <td class="p-4 flex items-center gap-3">
+                <img src="${u.avatar_url || DEFAULT_AVATAR}" class="w-8 h-8 rounded-full bg-gray-200">
+                <div><div class="font-bold text-gray-900">${u.first_name} ${u.last_name}</div><div class="text-xs text-gray-500">${u.email}</div></div>
+            </td>
+            <td class="p-4"><span class="px-2 py-1 rounded text-xs font-bold uppercase ${u.role==='admin'?'bg-purple-100 text-purple-600': u.role==='volunteer'?'bg-indigo-100 text-indigo-600':'bg-gray-100'}">${u.role}</span></td>
+            <td class="p-4">${u.class_name || '-'}</td>
+            <td class="p-4">${u.role === 'volunteer' ? `<select onchange="assignVolunteerSport('${u.id}', this.value)" class="p-1 text-xs border rounded w-full"><option value="">-- Assign --</option>${sportOptions}</select>` : '-'}</td>
+            <td class="p-4 text-right flex justify-end gap-2">
+                ${u.role !== 'admin' && u.role !== 'volunteer' ? `<button onclick="promoteUser('${u.id}')" class="text-xs bg-indigo-50 text-indigo-600 px-3 py-1 rounded hover:bg-indigo-100">Make Vol</button>` : ''}
+                <button onclick="resetUserPassword('${u.id}', '${u.first_name}')" class="text-xs bg-red-50 text-red-600 px-3 py-1 rounded hover:bg-red-100">Reset</button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+window.promoteUser = async function(userId) {
+    if(!confirm("Promote to Volunteer?")) return;
+    await adminClient.from('users').update({ role: 'volunteer' }).eq('id', userId);
+    loadUsersList();
+}
+
+window.assignVolunteerSport = async function(userId, sportId) {
+    await adminClient.from('users').update({ assigned_sport_id: sportId || null }).eq('id', userId);
+    showToast("Assigned!", "success");
+}
+
+window.resetUserPassword = async function(userId, name) {
+    if(!confirm(`Reset ${name}'s password to 'student'?`)) return;
+    const { error } = await adminClient.rpc('admin_reset_password', { target_user_id: userId });
+    showToast(error ? "Error" : "Password Reset", error ? "error" : "success");
+}
+
+window.filterUsers = function() {
+    const q = document.getElementById('user-search').value.toLowerCase();
+    document.querySelectorAll('#users-table-body tr').forEach(r => r.style.display = r.innerText.toLowerCase().includes(q) ? '' : 'none');
+}
+
+// --- UTILS ---
+window.loadMatches = async function(statusFilter) {
+    currentMatchViewFilter = statusFilter;
+    const container = document.getElementById('matches-grid');
+    if(!container) return;
+    
+    // Setup Tabs
+    const tabs = document.getElementById('match-filter-tabs');
+    if(!tabs) {
         const div = document.createElement('div');
         div.id = 'match-filter-tabs';
         div.className = "flex gap-2 mb-6 border-b border-gray-200 pb-2";
         div.innerHTML = `
-            <button onclick="loadMatches('Scheduled')" id="btn-filter-scheduled" class="px-4 py-2 text-sm font-bold text-gray-500 hover:text-black transition-colors">Scheduled</button>
-            <button onclick="loadMatches('Live')" id="btn-filter-live" class="px-4 py-2 text-sm font-bold text-gray-500 hover:text-black transition-colors">Live</button>
-            <button onclick="loadMatches('Completed')" id="btn-filter-completed" class="px-4 py-2 text-sm font-bold text-gray-500 hover:text-black transition-colors">Completed</button>
+            <button onclick="loadMatches('Scheduled')" class="px-4 py-2 text-sm font-bold">Scheduled</button>
+            <button onclick="loadMatches('Live')" class="px-4 py-2 text-sm font-bold">Live</button>
+            <button onclick="loadMatches('Completed')" class="px-4 py-2 text-sm font-bold">Completed</button>
         `;
-        container.insertBefore(div, document.getElementById('matches-grid'));
+        container.parentElement.insertBefore(div, container);
     }
+    
+    container.innerHTML = 'Loading...';
+    const { data: matches } = await adminClient.from('matches').select('*, sports(name, is_performance, unit)').eq('status', statusFilter).order('start_time', { ascending: true });
+    
+    if(!matches || !matches.length) { container.innerHTML = `<p class="col-span-3 text-center text-gray-400">No ${statusFilter} matches.</p>`; return; }
+
+    container.innerHTML = matches.map(m => `
+        <div class="bg-white p-5 rounded-3xl border border-gray-200 shadow-sm relative">
+            <div class="flex justify-between items-center mb-4">
+                 <span class="text-xs font-bold text-gray-500">${m.status}</span>
+                 <span class="text-xs text-gray-500 uppercase font-bold">${m.sports.name}</span>
+            </div>
+            ${m.sports.is_performance ? 
+                `<div class="text-center py-2"><h4 class="font-black text-xl text-gray-900">${m.team1_name}</h4></div>`
+            : 
+                `<div class="flex justify-between font-bold text-lg text-gray-900 px-2"><span>${m.team1_name}</span><span>VS</span><span>${m.team2_name}</span></div>`
+            }
+            <div class="mt-4 pt-4 border-t border-gray-100 flex justify-between">
+                 <span class="text-xs text-gray-400">${m.location || 'N/A'}</span>
+                 ${m.status === 'Scheduled' ? `<button onclick="startMatch('${m.id}')" class="text-xs bg-green-500 text-white px-3 py-1 rounded">Start</button>` : ''}
+                 ${m.status === 'Live' && m.sports.is_performance ? `<button onclick="endPerformanceEvent('${m.id}')" class="text-xs bg-red-500 text-white px-3 py-1 rounded">End Event</button>` : ''}
+            </div>
+        </div>
+    `).join('');
 }
 
+window.closeModal = (id) => document.getElementById(id).classList.add('hidden');
+
+function setupMatchFilters() { /* handled in loadMatches */ }
+
 function injectToastContainer() {
-    if(!document.getElementById('toast-container')) {
-        const div = document.createElement('div');
-        div.id = 'toast-container';
-        div.className = 'fixed bottom-10 left-1/2 transform -translate-x-1/2 z-[70] transition-all duration-300 opacity-0 pointer-events-none translate-y-10';
-        div.innerHTML = `<div id="toast-content" class="bg-gray-900 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3"><div id="toast-icon"></div><p id="toast-msg" class="text-sm font-bold"></p></div>`;
-        document.body.appendChild(div);
-    }
+    if(document.getElementById('toast-container')) return;
+    const div = document.createElement('div');
+    div.id = 'toast-container';
+    div.className = 'fixed bottom-10 left-1/2 transform -translate-x-1/2 z-[70] transition-all duration-300 opacity-0 pointer-events-none translate-y-10';
+    div.innerHTML = `<div id="toast-content" class="bg-gray-900 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3"><div id="toast-icon"></div><p id="toast-msg" class="text-sm font-bold"></p></div>`;
+    document.body.appendChild(div);
 }
 
 function showToast(msg, type) {
