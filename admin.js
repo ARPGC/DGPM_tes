@@ -583,41 +583,68 @@ window.openTeamModal = async function(teamId, teamName) {
     // Reset State
     nameInput.value = teamName;
     idDisplay.innerText = `Team ID: ${teamId}`;
-    tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-gray-400">Loading squad details...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-400">Loading squad details...</td></tr>';
     
     // Show Modal
     modal.classList.remove('hidden');
 
-    // Fetch Squad with Extended Details
+    // Fetch Squad with Extended Details & User ID
     const { data: members, error } = await supabaseClient
         .from('team_members')
         .select(`
             status,
+            user_id,
             users (first_name, last_name, class_name, mobile)
         `)
         .eq('team_id', teamId)
         .eq('status', 'Accepted');
 
     if (error) {
-        tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-red-400">Error loading members</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-red-400">Error loading members</td></tr>';
         console.error(error);
         return;
     }
 
     if (!members || members.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="p-8 text-center text-gray-400 font-bold">No members found in this squad.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-gray-400 font-bold">No members found in this squad.</td></tr>';
         return;
     }
 
-    // Render Rows with Contact & Class
+    // Render Rows with Contact & Class & Remove Button
     tbody.innerHTML = members.map((m, i) => `
         <tr class="hover:bg-gray-50 transition-colors group">
             <td class="p-4 text-gray-400 font-mono text-xs">${i + 1}</td>
             <td class="p-4 font-bold text-gray-900">${m.users.first_name} ${m.users.last_name}</td>
             <td class="p-4 text-xs font-bold text-gray-500 uppercase">${m.users.class_name || '-'}</td>
             <td class="p-4 text-right font-mono text-gray-600 text-xs">${m.users.mobile || '-'}</td>
+            <td class="p-4 text-right">
+                <button onclick="removeTeamMember('${m.user_id}')" class="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-1.5 rounded-lg transition-colors" title="Remove Member">
+                   <i data-lucide="trash" class="w-4 h-4"></i>
+                </button>
+            </td>
         </tr>
     `).join('');
+    if(window.lucide) lucide.createIcons();
+}
+
+// New Function: Remove a member from the team
+window.removeTeamMember = async function(userId) {
+    if(!confirm("Are you sure you want to remove this member from the team?")) return;
+    
+    const { error } = await supabaseClient
+        .from('team_members')
+        .delete()
+        .eq('team_id', currentEditingTeamId)
+        .eq('user_id', userId);
+
+    if(error) {
+        showToast("Error removing member: " + error.message, "error");
+    } else {
+        showToast("Member removed successfully", "success");
+        // Reload modal content to show updated list
+        const nameInput = document.getElementById('modal-team-name-input');
+        openTeamModal(currentEditingTeamId, nameInput.value);
+    }
 }
 
 // New Function: Save Team Name Change
@@ -639,6 +666,29 @@ window.saveTeamNameUpdate = async function() {
         
         // Refresh the list in the background
         loadTeamsList(); 
+    }
+}
+
+// New Function: Delete Entire Team
+window.deleteTeam = async function() {
+    if(!currentEditingTeamId) return;
+    const confirmMsg = "DANGER: Are you sure you want to DELETE this ENTIRE TEAM?\n\nThis action cannot be undone and will remove all members from the team.";
+    if(!confirm(confirmMsg)) return;
+
+    // Supabase usually cascades deletes, but if not, team_members will be orphaned.
+    // We will attempt to delete the team directly.
+    const { error } = await supabaseClient
+        .from('teams')
+        .delete()
+        .eq('id', currentEditingTeamId);
+
+    if(error) {
+        showToast("Failed to delete team: " + error.message, "error");
+    } else {
+        showToast("Team Deleted Successfully", "success");
+        logAdminAction('TEAM_DELETE', `Deleted team ID ${currentEditingTeamId}`);
+        closeModal('team-modal');
+        loadTeamsList(); // Refresh dashboard
     }
 }
 
