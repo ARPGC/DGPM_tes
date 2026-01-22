@@ -183,6 +183,37 @@
         </div>
 
         <div id="view-teams" class="view-section hidden animate-fade-in">
+             <div class="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+                <div class="p-4 border-b border-gray-100 flex flex-wrap gap-4 items-center bg-gray-50/50">
+                    <div class="flex-1 min-w-[200px]">
+                        <div class="relative">
+                            <i data-lucide="search" class="absolute left-3 top-3 w-4 h-4 text-gray-400"></i>
+                            <input type="text" id="team-search-input" onkeyup="filterTeamsList()" placeholder="Search Teams..." class="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-brand-primary/20 transition-all">
+                        </div>
+                    </div>
+
+                    <select id="filter-team-sport" onchange="filterTeamsList()" class="bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none cursor-pointer hover:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 transition-all">
+                        <option value="">All Sports</option>
+                    </select>
+
+                    <select id="filter-team-status" onchange="filterTeamsList()" class="bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none cursor-pointer hover:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 transition-all">
+                        <option value="">All Statuses</option>
+                        <option value="Locked">Locked</option>
+                        <option value="Open">Open</option>
+                    </select>
+
+                    <select id="sort-team-order" onchange="filterTeamsList()" class="bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none cursor-pointer hover:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 transition-all">
+                        <option value="newest">Newest First</option>
+                        <option value="oldest">Oldest First</option>
+                        <option value="name_asc">Name (A-Z)</option>
+                    </select>
+                    
+                    <button onclick="resetTeamFilters()" class="p-2.5 bg-gray-200 text-gray-600 rounded-xl hover:bg-gray-300 transition-colors" title="Reset Filters">
+                        <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                    </button>
+                </div>
+             </div>
+
              <div id="teams-grid" class="grid grid-cols-1 md:grid-cols-3 gap-6"></div>
         </div>
 
