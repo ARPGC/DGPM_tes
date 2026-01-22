@@ -210,38 +210,72 @@ window.startMatch = async function(matchId) {
     loadMatches('Live');
 }
 
-// --- 10. TEAMS (The Fix) ---
+// --- 10. TEAMS (UPDATED) ---
 async function loadTeamsList() {
     const grid = document.getElementById('teams-grid');
     if(!grid) return;
     grid.innerHTML = '<p class="col-span-3 text-center text-gray-400 py-10">Loading teams...</p>';
 
-    if(!document.getElementById('teams-search-container')) {
-        const div = document.createElement('div');
-        div.id = 'teams-search-container';
-        div.className = "col-span-3 mb-4 flex gap-2";
-        div.innerHTML = `<input type="text" id="team-search-input" onkeyup="filterTeamsList()" placeholder="Search Teams..." class="flex-1 p-3 bg-white border border-gray-200 rounded-xl text-sm outline-none focus:border-black">`;
-        grid.parentElement.insertBefore(div, grid);
-    }
-
+    // Note: Search/Filter UI is now in HTML, handled by filterTeamsList
+    
     const { data: teams } = await adminClient.from('teams')
         .select('*, sports(name), captain:users!captain_id(first_name, last_name)')
         .order('created_at', { ascending: false });
 
     allTeamsCache = teams || [];
-    renderTeams(allTeamsCache);
+
+    // Populate Sport Dropdown for Teams
+    const sports = [...new Set(allTeamsCache.map(t => t.sports?.name).filter(Boolean))].sort();
+    const sportSelect = document.getElementById('filter-team-sport');
+    if(sportSelect && sportSelect.children.length <= 1) {
+        sportSelect.innerHTML = `<option value="">All Sports</option>` + sports.map(s => `<option value="${s}">${s}</option>`).join('');
+    }
+
+    // Initial Render via Filter
+    filterTeamsList();
 }
 
 window.filterTeamsList = function() {
-    const q = document.getElementById('team-search-input').value.toLowerCase();
-    renderTeams(allTeamsCache.filter(t => t.name.toLowerCase().includes(q)));
+    const search = document.getElementById('team-search-input')?.value.toLowerCase() || '';
+    const sportFilter = document.getElementById('filter-team-sport')?.value || '';
+    const statusFilter = document.getElementById('filter-team-status')?.value || '';
+    const sortOrder = document.getElementById('sort-team-order')?.value || 'newest';
+
+    // 1. Filter
+    let filtered = allTeamsCache.filter(t => {
+        const matchesSearch = t.name.toLowerCase().includes(search);
+        const matchesSport = sportFilter === '' || t.sports?.name === sportFilter;
+        const matchesStatus = statusFilter === '' || t.status === statusFilter;
+        return matchesSearch && matchesSport && matchesStatus;
+    });
+
+    // 2. Sort
+    filtered.sort((a, b) => {
+        if (sortOrder === 'newest') return new Date(b.created_at) - new Date(a.created_at);
+        if (sortOrder === 'oldest') return new Date(a.created_at) - new Date(b.created_at);
+        if (sortOrder === 'name_asc') return a.name.localeCompare(b.name);
+        return 0;
+    });
+
+    // 3. Prepare Data for Export (Flatten Objects)
+    dataCache = filtered.map(t => ({
+        Team_Name: t.name,
+        Sport: t.sports?.name || 'Unknown',
+        Captain: `${t.captain?.first_name || 'Unknown'} ${t.captain?.last_name || ''}`,
+        Status: t.status,
+        Created_At: new Date(t.created_at).toLocaleDateString()
+    }));
+
+    // 4. Render
+    renderTeams(filtered);
 }
 
 function renderTeams(teams) {
     const grid = document.getElementById('teams-grid');
-    if(teams.length === 0) { grid.innerHTML = '<p class="col-span-3 text-center text-gray-400">No teams found.</p>'; return; }
+    if(!grid) return;
+
+    if(teams.length === 0) { grid.innerHTML = '<p class="col-span-3 text-center text-gray-400">No teams found matching filters.</p>'; return; }
     
-    // IMPORTANT: Note the button calls openTeamModal, NOT viewTeamSquad
     grid.innerHTML = teams.map(t => `
         <div class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
             <div class="flex justify-between items-start mb-3">
@@ -254,6 +288,15 @@ function renderTeams(teams) {
                 View Details & Edit
             </button>
         </div>`).join('');
+}
+
+window.resetTeamFilters = function() {
+    if(document.getElementById('team-search-input')) document.getElementById('team-search-input').value = '';
+    if(document.getElementById('filter-team-sport')) document.getElementById('filter-team-sport').value = '';
+    if(document.getElementById('filter-team-status')) document.getElementById('filter-team-status').value = '';
+    if(document.getElementById('sort-team-order')) document.getElementById('sort-team-order').value = 'newest';
+    
+    filterTeamsList();
 }
 
 // --- NEW MODAL FUNCTIONS ---
