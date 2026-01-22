@@ -218,8 +218,9 @@ async function loadTeamsList() {
 
     // Note: Search/Filter UI is now in HTML, handled by filterTeamsList
     
+    // UPDATED QUERY: Fetch team_size from sports and all team members to count them
     const { data: teams } = await adminClient.from('teams')
-        .select('*, sports(name), captain:users!captain_id(first_name, last_name)')
+        .select('*, sports(name, team_size), captain:users!captain_id(first_name, last_name), team_members(status)')
         .order('created_at', { ascending: false });
 
     allTeamsCache = teams || [];
@@ -261,6 +262,8 @@ window.filterTeamsList = function() {
     dataCache = filtered.map(t => ({
         Team_Name: t.name,
         Sport: t.sports?.name || 'Unknown',
+        Members: t.team_members?.filter(m => m.status === 'Accepted').length || 0,
+        Max_Size: t.sports?.team_size || 'N/A',
         Captain: `${t.captain?.first_name || 'Unknown'} ${t.captain?.last_name || ''}`,
         Status: t.status,
         Created_At: new Date(t.created_at).toLocaleDateString()
@@ -276,18 +279,34 @@ function renderTeams(teams) {
 
     if(teams.length === 0) { grid.innerHTML = '<p class="col-span-3 text-center text-gray-400">No teams found matching filters.</p>'; return; }
     
-    grid.innerHTML = teams.map(t => `
-        <div class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
+    grid.innerHTML = teams.map(t => {
+        const currentCount = t.team_members ? t.team_members.filter(m => m.status === 'Accepted').length : 0;
+        const maxCount = t.sports?.team_size || '-';
+        
+        return `
+        <div class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden group">
             <div class="flex justify-between items-start mb-3">
                 <span class="text-[10px] font-bold uppercase bg-gray-100 px-2 py-1 rounded text-gray-500">${t.sports?.name || 'Sport'}</span>
                 <span class="text-[10px] font-bold uppercase ${t.status === 'Locked' ? 'text-red-500' : 'text-green-500'}">${t.status}</span>
             </div>
-            <h4 class="font-bold text-lg text-gray-900 truncate" title="${t.name}">${t.name}</h4>
-            <p class="text-xs text-gray-500 mb-4">Capt: ${t.captain?.first_name || 'Unknown'}</p>
-            <button onclick="openTeamModal('${t.id}', '${t.name.replace(/'/g, "\\'")}')" class="w-full py-2 bg-indigo-50 text-indigo-600 text-xs font-bold rounded-lg hover:bg-indigo-100 transition-colors">
-                View Details & Edit
+            
+            <h4 class="font-bold text-lg text-gray-900 truncate mb-1" title="${t.name}">${t.name}</h4>
+            
+            <div class="flex items-center gap-2 mb-4">
+                 <div class="flex items-center gap-1 bg-indigo-50 px-2 py-0.5 rounded text-indigo-600 text-xs font-bold">
+                    <i data-lucide="users" class="w-3 h-3"></i>
+                    <span>${currentCount} / ${maxCount}</span>
+                 </div>
+                 <span class="text-xs text-gray-400">Capt: ${t.captain?.first_name || 'Unknown'}</span>
+            </div>
+
+            <button onclick="openTeamModal('${t.id}', '${t.name.replace(/'/g, "\\'")}')" class="w-full py-2 bg-gray-900 text-white text-xs font-bold rounded-xl hover:bg-gray-800 transition-colors">
+                Manage Team
             </button>
-        </div>`).join('');
+        </div>`;
+    }).join('');
+    
+    if(window.lucide) lucide.createIcons();
 }
 
 window.resetTeamFilters = function() {
