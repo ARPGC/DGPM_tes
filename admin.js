@@ -128,6 +128,13 @@ window.switchView = function(viewId) {
         else globalActions.classList.add('hidden');
     }
 
+    // Toggle Squad PDF Button (Only for Teams view)
+    const squadPdfBtn = document.getElementById('btn-squad-pdf');
+    if(squadPdfBtn) {
+        if (viewId === 'teams') squadPdfBtn.classList.remove('hidden');
+        else squadPdfBtn.classList.add('hidden');
+    }
+
     dataCache = [];
     if(viewId === 'users') loadUsersList();
     if(viewId === 'matches') { setupMatchFilters(); loadMatches('Scheduled'); }
@@ -155,6 +162,101 @@ window.exportCurrentPage = function(type) {
         doc.autoTable({ head: [headers], body: rows, startY: 30, theme: 'grid', styles: { fontSize: 8 } });
         doc.save(`${filename}.pdf`);
     }
+}
+
+// --- 7b. NEW SQUADS PDF EXPORT ---
+window.downloadSquadsPDF = async function() {
+    showToast("Generating Full Squads PDF...", "success");
+
+    // 1. Fetch Deep Data (Teams -> Members -> Users)
+    const { data: members, error } = await adminClient
+        .from('team_members')
+        .select(`
+            status,
+            users (first_name, last_name, class_name, gender, mobile, student_id),
+            teams (id, name, status, sports(name), captain:users!captain_id(first_name, last_name))
+        `)
+        .eq('status', 'Accepted');
+
+    if(error || !members) return showToast("Error fetching squad data", "error");
+
+    // 2. Get Active Filters from DOM to respect current view
+    const sportFilter = document.getElementById('filter-team-sport')?.value || '';
+    const statusFilter = document.getElementById('filter-team-status')?.value || '';
+
+    // 3. Group by Team
+    const grouped = {};
+    members.forEach(m => {
+        const t = m.teams;
+        if (!t) return;
+        
+        // Apply Filters
+        if (sportFilter && t.sports?.name !== sportFilter) return;
+        if (statusFilter && t.status !== statusFilter) return;
+
+        const teamName = t.name;
+        if (!grouped[teamName]) {
+            grouped[teamName] = {
+                sport: t.sports?.name || 'Unknown',
+                captain: t.captain ? `${t.captain.first_name} ${t.captain.last_name}` : 'N/A',
+                players: []
+            };
+        }
+        grouped[teamName].players.push(m.users);
+    });
+
+    if (Object.keys(grouped).length === 0) return showToast("No teams found with current filters.", "error");
+
+    // 4. Generate PDF
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+
+    doc.setFontSize(22);
+    doc.text("URJA 2026 - OFFICIAL SQUADS LIST", 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 26);
+
+    let yPos = 35;
+
+    Object.keys(grouped).sort().forEach(teamName => {
+        const team = grouped[teamName];
+        
+        // Check for page break
+        if (yPos > 250) { doc.addPage(); yPos = 20; }
+
+        // Team Header
+        doc.setFontSize(14);
+        doc.setTextColor(79, 70, 229); // Indigo
+        doc.text(`${teamName} (${team.sport})`, 14, yPos);
+        
+        doc.setFontSize(10);
+        doc.setTextColor(100);
+        doc.text(`Captain: ${team.captain}`, 14, yPos + 6);
+
+        // Table Body
+        const rows = team.players.map((p, i) => [
+            i + 1,
+            `${p.first_name} ${p.last_name}`,
+            p.class_name || '-',
+            p.gender || '-',
+            p.mobile || '-'
+        ]);
+
+        doc.autoTable({
+            startY: yPos + 10,
+            head: [['#', 'Player Name', 'Class', 'Gender', 'Mobile']],
+            body: rows,
+            theme: 'grid',
+            headStyles: { fillColor: [66, 66, 66] },
+            styles: { fontSize: 9 },
+            margin: { left: 14 }
+        });
+
+        yPos = doc.lastAutoTable.finalY + 15;
+    });
+
+    doc.save(`Urja_Squads_MasterList_${new Date().toISOString().split('T')[0]}.pdf`);
+    showToast("PDF Downloaded!", "success");
 }
 
 // --- 8. DASHBOARD STATS ---
