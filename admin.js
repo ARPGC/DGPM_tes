@@ -169,12 +169,17 @@ window.downloadSquadsPDF = async function() {
     showToast("Generating Full Squads PDF...", "success");
 
     // 1. Fetch Deep Data (Teams -> Members -> Users)
+    // ADDED: Fetch captain's class_name and gender for filtering
     const { data: members, error } = await adminClient
         .from('team_members')
         .select(`
             status,
             users (first_name, last_name, class_name, gender, mobile, student_id),
-            teams (id, name, status, sports(name), captain:users!captain_id(first_name, last_name))
+            teams (
+                id, name, status, 
+                sports(name), 
+                captain:users!captain_id(first_name, last_name, class_name, gender)
+            )
         `)
         .eq('status', 'Accepted');
 
@@ -183,6 +188,8 @@ window.downloadSquadsPDF = async function() {
     // 2. Get Active Filters from DOM to respect current view
     const sportFilter = document.getElementById('filter-team-sport')?.value || '';
     const statusFilter = document.getElementById('filter-team-status')?.value || '';
+    const genderFilter = document.getElementById('filter-team-gender')?.value || '';
+    const classFilter = document.getElementById('filter-team-class')?.value || '';
 
     // 3. Group by Team
     const grouped = {};
@@ -190,9 +197,20 @@ window.downloadSquadsPDF = async function() {
         const t = m.teams;
         if (!t) return;
         
-        // Apply Filters
+        // --- APPLY FILTERS ---
         if (sportFilter && t.sports?.name !== sportFilter) return;
         if (statusFilter && t.status !== statusFilter) return;
+
+        // Gender Filter (Based on Captain)
+        if (genderFilter && t.captain?.gender !== genderFilter) return;
+
+        // Class Category Filter (Based on Captain)
+        if (classFilter) {
+            const isJunior = ['FYJC', 'SYJC'].includes(t.captain?.class_name);
+            if (classFilter === 'Junior' && !isJunior) return;
+            if (classFilter === 'Senior' && isJunior) return;
+        }
+        // ---------------------
 
         const teamName = t.name;
         if (!grouped[teamName]) {
@@ -215,8 +233,19 @@ window.downloadSquadsPDF = async function() {
     doc.text("URJA 2026 - OFFICIAL SQUADS LIST", 14, 20);
     doc.setFontSize(10);
     doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 26);
+    
+    // Add subtitle for filters
+    let filterText = [];
+    if(sportFilter) filterText.push(sportFilter);
+    if(classFilter) filterText.push(classFilter);
+    if(genderFilter) filterText.push(genderFilter);
+    if(filterText.length > 0) {
+        doc.setFontSize(10);
+        doc.setTextColor(100);
+        doc.text(`Filters: ${filterText.join(' | ')}`, 14, 32);
+    }
 
-    let yPos = 35;
+    let yPos = 40;
 
     Object.keys(grouped).sort().forEach(teamName => {
         const team = grouped[teamName];
@@ -321,8 +350,9 @@ async function loadTeamsList() {
     // Note: Search/Filter UI is now in HTML, handled by filterTeamsList
     
     // UPDATED QUERY: Fetch team_size from sports and all team members to count them
+    // ADDED: Fetch captain's class_name and gender
     const { data: teams } = await adminClient.from('teams')
-        .select('*, sports(name, team_size), captain:users!captain_id(first_name, last_name), team_members(status)')
+        .select('*, sports(name, team_size), captain:users!captain_id(first_name, last_name, class_name, gender), team_members(status)')
         .order('created_at', { ascending: false });
 
     allTeamsCache = teams || [];
@@ -342,6 +372,11 @@ window.filterTeamsList = function() {
     const search = document.getElementById('team-search-input')?.value.toLowerCase() || '';
     const sportFilter = document.getElementById('filter-team-sport')?.value || '';
     const statusFilter = document.getElementById('filter-team-status')?.value || '';
+    
+    // NEW FILTERS
+    const genderFilter = document.getElementById('filter-team-gender')?.value || '';
+    const classFilter = document.getElementById('filter-team-class')?.value || '';
+
     const sortOrder = document.getElementById('sort-team-order')?.value || 'newest';
 
     // 1. Filter
@@ -349,7 +384,19 @@ window.filterTeamsList = function() {
         const matchesSearch = t.name.toLowerCase().includes(search);
         const matchesSport = sportFilter === '' || t.sports?.name === sportFilter;
         const matchesStatus = statusFilter === '' || t.status === statusFilter;
-        return matchesSearch && matchesSport && matchesStatus;
+
+        // Gender Check (Based on Captain)
+        const matchesGender = genderFilter === '' || t.captain?.gender === genderFilter;
+
+        // Class Category Check (Based on Captain)
+        let matchesClass = true;
+        if(classFilter !== '') {
+            const isJunior = ['FYJC', 'SYJC'].includes(t.captain?.class_name);
+            if(classFilter === 'Junior') matchesClass = isJunior;
+            else if(classFilter === 'Senior') matchesClass = !isJunior;
+        }
+
+        return matchesSearch && matchesSport && matchesStatus && matchesGender && matchesClass;
     });
 
     // 2. Sort
@@ -367,6 +414,8 @@ window.filterTeamsList = function() {
         Members: t.team_members?.filter(m => m.status === 'Accepted').length || 0,
         Max_Size: t.sports?.team_size || 'N/A',
         Captain: `${t.captain?.first_name || 'Unknown'} ${t.captain?.last_name || ''}`,
+        Capt_Class: t.captain?.class_name || '-',
+        Capt_Gender: t.captain?.gender || '-',
         Status: t.status,
         Created_At: new Date(t.created_at).toLocaleDateString()
     }));
@@ -384,6 +433,7 @@ function renderTeams(teams) {
     grid.innerHTML = teams.map(t => {
         const currentCount = t.team_members ? t.team_members.filter(m => m.status === 'Accepted').length : 0;
         const maxCount = t.sports?.team_size || '-';
+        const isJunior = ['FYJC', 'SYJC'].includes(t.captain?.class_name);
         
         return `
         <div class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden group">
@@ -400,6 +450,7 @@ function renderTeams(teams) {
                     <span>${currentCount} / ${maxCount}</span>
                  </div>
                  <span class="text-xs text-gray-400">Capt: ${t.captain?.first_name || 'Unknown'}</span>
+                 <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 rounded">${isJunior ? 'JR' : 'SR'}</span>
             </div>
 
             <button onclick="openTeamModal('${t.id}', '${t.name.replace(/'/g, "\\'")}')" class="w-full py-2 bg-gray-900 text-white text-xs font-bold rounded-xl hover:bg-gray-800 transition-colors">
@@ -415,6 +466,11 @@ window.resetTeamFilters = function() {
     if(document.getElementById('team-search-input')) document.getElementById('team-search-input').value = '';
     if(document.getElementById('filter-team-sport')) document.getElementById('filter-team-sport').value = '';
     if(document.getElementById('filter-team-status')) document.getElementById('filter-team-status').value = '';
+    
+    // RESET NEW FILTERS
+    if(document.getElementById('filter-team-gender')) document.getElementById('filter-team-gender').value = '';
+    if(document.getElementById('filter-team-class')) document.getElementById('filter-team-class').value = '';
+
     if(document.getElementById('sort-team-order')) document.getElementById('sort-team-order').value = 'newest';
     
     filterTeamsList();
