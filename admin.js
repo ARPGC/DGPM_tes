@@ -128,11 +128,16 @@ window.switchView = function(viewId) {
         else globalActions.classList.add('hidden');
     }
 
-    // Toggle Squad PDF Button (Only for Teams view)
+    // Toggle Squad Buttons (Only for Teams view)
     const squadPdfBtn = document.getElementById('btn-squad-pdf');
-    if(squadPdfBtn) {
-        if (viewId === 'teams') squadPdfBtn.classList.remove('hidden');
-        else squadPdfBtn.classList.add('hidden');
+    const squadExcelBtn = document.getElementById('btn-squad-excel');
+    
+    if (viewId === 'teams') {
+        if(squadPdfBtn) squadPdfBtn.classList.remove('hidden');
+        if(squadExcelBtn) squadExcelBtn.classList.remove('hidden');
+    } else {
+        if(squadPdfBtn) squadPdfBtn.classList.add('hidden');
+        if(squadExcelBtn) squadExcelBtn.classList.add('hidden');
     }
 
     dataCache = [];
@@ -164,12 +169,10 @@ window.exportCurrentPage = function(type) {
     }
 }
 
-// --- 7b. NEW SQUADS PDF EXPORT ---
-window.downloadSquadsPDF = async function() {
-    showToast("Generating Full Squads PDF...", "success");
+// --- 7b. NEW SQUADS EXPORT (PDF & EXCEL) ---
 
+async function fetchSquadsData() {
     // 1. Fetch Deep Data (Teams -> Members -> Users)
-    // ADDED: Fetch captain's class_name and gender for filtering
     const { data: members, error } = await adminClient
         .from('team_members')
         .select(`
@@ -183,49 +186,100 @@ window.downloadSquadsPDF = async function() {
         `)
         .eq('status', 'Accepted');
 
-    if(error || !members) return showToast("Error fetching squad data", "error");
+    if(error || !members) {
+        showToast("Error fetching squad data", "error");
+        return null;
+    }
+    return members;
+}
 
-    // 2. Get Active Filters from DOM to respect current view
+function getFilteredSquads(members) {
+    // 2. Get Active Filters
     const sportFilter = document.getElementById('filter-team-sport')?.value || '';
     const statusFilter = document.getElementById('filter-team-status')?.value || '';
     const genderFilter = document.getElementById('filter-team-gender')?.value || '';
     const classFilter = document.getElementById('filter-team-class')?.value || '';
 
-    // 3. Group by Team
-    const grouped = {};
-    members.forEach(m => {
+    // 3. Filter Members based on Team attributes
+    return members.filter(m => {
         const t = m.teams;
-        if (!t) return;
+        if (!t) return false;
         
-        // --- APPLY FILTERS ---
-        if (sportFilter && t.sports?.name !== sportFilter) return;
-        if (statusFilter && t.status !== statusFilter) return;
-
-        // Gender Filter (Based on Captain)
-        if (genderFilter && t.captain?.gender !== genderFilter) return;
-
-        // Class Category Filter (Based on Captain)
+        if (sportFilter && t.sports?.name !== sportFilter) return false;
+        if (statusFilter && t.status !== statusFilter) return false;
+        if (genderFilter && t.captain?.gender !== genderFilter) return false;
+        
         if (classFilter) {
             const isJunior = ['FYJC', 'SYJC'].includes(t.captain?.class_name);
-            if (classFilter === 'Junior' && !isJunior) return;
-            if (classFilter === 'Senior' && isJunior) return;
+            if (classFilter === 'Junior' && !isJunior) return false;
+            if (classFilter === 'Senior' && isJunior) return false;
         }
-        // ---------------------
+        return true;
+    });
+}
 
-        const teamName = t.name;
+// NEW: SQUADS EXCEL
+window.downloadSquadsExcel = async function() {
+    showToast("Generating Squads Excel...", "success");
+    const members = await fetchSquadsData();
+    if(!members) return;
+
+    const filtered = getFilteredSquads(members);
+    if(filtered.length === 0) return showToast("No squads found with current filters", "error");
+
+    // Flatten Data for Excel
+    const excelData = filtered.map(m => ({
+        "Team Name": m.teams.name,
+        "Sport": m.teams.sports?.name || 'Unknown',
+        "Category": ['FYJC', 'SYJC'].includes(m.teams.captain?.class_name) ? 'Junior' : 'Senior',
+        "Team Captain": `${m.teams.captain?.first_name || ''} ${m.teams.captain?.last_name || ''}`,
+        "Player Name": `${m.users.first_name} ${m.users.last_name}`,
+        "Player Gender": m.users.gender || '-',
+        "Player Class": m.users.class_name || '-',
+        "Player Mobile": m.users.mobile || '-',
+        "Player ID": m.users.student_id || '-'
+    }));
+
+    // Sort by Sport, then Team Name
+    excelData.sort((a, b) => {
+        if(a.Sport !== b.Sport) return a.Sport.localeCompare(b.Sport);
+        return a["Team Name"].localeCompare(b["Team Name"]);
+    });
+
+    // Create Worksheet
+    const ws = XLSX.utils.json_to_sheet(excelData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Squads_List");
+
+    // Download
+    const filename = `Urja_Full_Squads_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(wb, filename);
+    showToast("Excel Downloaded!", "success");
+}
+
+window.downloadSquadsPDF = async function() {
+    showToast("Generating Full Squads PDF...", "success");
+    const members = await fetchSquadsData();
+    if(!members) return;
+
+    const filtered = getFilteredSquads(members);
+    if(filtered.length === 0) return showToast("No squads found with current filters", "error");
+
+    // Group by Team for PDF
+    const grouped = {};
+    filtered.forEach(m => {
+        const teamName = m.teams.name;
         if (!grouped[teamName]) {
             grouped[teamName] = {
-                sport: t.sports?.name || 'Unknown',
-                captain: t.captain ? `${t.captain.first_name} ${t.captain.last_name}` : 'N/A',
+                sport: m.teams.sports?.name || 'Unknown',
+                captain: m.teams.captain ? `${m.teams.captain.first_name} ${m.teams.captain.last_name}` : 'N/A',
                 players: []
             };
         }
         grouped[teamName].players.push(m.users);
     });
 
-    if (Object.keys(grouped).length === 0) return showToast("No teams found with current filters.", "error");
-
-    // 4. Generate PDF
+    // Generate PDF
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
 
@@ -235,7 +289,10 @@ window.downloadSquadsPDF = async function() {
     doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 26);
     
     // Add subtitle for filters
-    let filterText = [];
+    const filterText = [];
+    const sportFilter = document.getElementById('filter-team-sport')?.value;
+    const genderFilter = document.getElementById('filter-team-gender')?.value;
+    const classFilter = document.getElementById('filter-team-class')?.value;
     if(sportFilter) filterText.push(sportFilter);
     if(classFilter) filterText.push(classFilter);
     if(genderFilter) filterText.push(genderFilter);
