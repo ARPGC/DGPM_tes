@@ -95,13 +95,19 @@
             
             <div id="global-actions" class="hidden flex gap-2">
                 <button onclick="exportCurrentPage('excel')" class="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-all active:scale-95">
-                    <i data-lucide="sheet" class="w-4 h-4"></i> Excel
+                    <i data-lucide="sheet" class="w-4 h-4"></i> View Excel
                 </button>
                 <button onclick="exportCurrentPage('pdf')" class="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-red-200 hover:bg-red-700 transition-all active:scale-95">
-                    <i data-lucide="file-text" class="w-4 h-4"></i> PDF
+                    <i data-lucide="file-text" class="w-4 h-4"></i> View PDF
+                </button>
+                
+                <div class="w-px bg-gray-300 mx-1 h-8 self-center"></div>
+
+                <button id="btn-squad-excel" onclick="downloadSquadsExcel()" class="hidden flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-all active:scale-95">
+                    <i data-lucide="table" class="w-4 h-4"></i> Squads Excel
                 </button>
                 <button id="btn-squad-pdf" onclick="downloadSquadsPDF()" class="hidden flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-95">
-                    <i data-lucide="users-round" class="w-4 h-4"></i> Squads List
+                    <i data-lucide="users-round" class="w-4 h-4"></i> Squads PDF
                 </button>
             </div>
         </div>
