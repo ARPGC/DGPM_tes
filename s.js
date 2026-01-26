@@ -207,10 +207,40 @@ window.handleScheduleClick = async function(sportId, sportName, isPerformance, s
     }
 }
 
+// Helper: Fetch all registrations with pagination (>1000 rows)
+async function fetchAllRegistrations(sportId) {
+    let allRegs = [];
+    let from = 0;
+    const step = 1000;
+    let hasMore = true;
+
+    while (hasMore) {
+        const { data, error } = await supabaseClient
+            .from('registrations')
+            .select('user_id, users(first_name, last_name, student_id, class_name, gender)')
+            .eq('sport_id', sportId)
+            .range(from, from + step - 1);
+
+        if (error) {
+            showToast("Error fetching regs: " + error.message, "error");
+            return [];
+        }
+
+        if (data && data.length > 0) {
+            allRegs = allRegs.concat(data);
+            if (data.length < step) hasMore = false;
+            else from += step;
+        } else {
+            hasMore = false;
+        }
+    }
+    return allRegs;
+}
+
 async function initPerformanceEvent(sportId, sportName, category) {
-    const { data: regs } = await supabaseClient.from('registrations')
-        .select('user_id, users(first_name, last_name, student_id, class_name, gender)')
-        .eq('sport_id', sportId);
+    // UPDATED: Use fetchAllRegistrations to bypass 1000 limit
+    showToast("Fetching participants...", "info");
+    const regs = await fetchAllRegistrations(sportId);
 
     if (!regs || regs.length === 0) return showToast("No registrations found.", "error");
 
@@ -285,44 +315,32 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
                 candidates = allTeams.map(t => ({ id: t.team_id, name: t.team_name }));
             } else {
                 // IMPORTANT: Filter by Age (Junior/Senior) AND Gender (Male/Female)
-                
-                // 1. Determine requirements
                 const requiredAge = category.toLowerCase().includes('junior') ? 'junior' : 'senior';
                 const requiredGender = category.toLowerCase().includes('boys') ? 'male' : 'female';
 
-                console.log(`[DEBUG] Looking for Age: ${requiredAge}, Gender: ${requiredGender}`);
-
-                // 2. Filter teams by Age first
+                // Filter teams by Age first
                 const ageFilteredTeams = allTeams.filter(t => (t.category || '').toLowerCase().trim() === requiredAge);
                 
-                // 3. Fetch genders for these teams
                 const teamIds = ageFilteredTeams.map(t => t.team_id);
                 
                 if (teamIds.length > 0) {
-                    // UPDATED: use 'team_members' table instead of 'registrations'
                     const { data: members, error: regError } = await supabaseClient
                         .from('team_members')
                         .select('team_id, users(gender)')
                         .in('team_id', teamIds);
 
-                    if (regError) {
-                        console.error("Gender Fetch Error:", regError);
-                    }
+                    if (regError) console.error("Gender Fetch Error:", regError);
 
-                    // Map TeamID -> Gender (Male/Female)
                     const teamGenderMap = {};
                     if(members) {
                         members.forEach(m => {
                             if(!m.users) return;
                             const g = (m.users.gender || '').toLowerCase();
-                            // Standardize gender string
                             const stdG = (g === 'male' || g === 'boy' || g === 'm') ? 'male' : 'female';
-                            // Store first member's gender as team gender
                             if (!teamGenderMap[m.team_id]) teamGenderMap[m.team_id] = stdG;
                         });
                     }
 
-                    // 4. Final Filter: Keep only matching gender
                     candidates = ageFilteredTeams.filter(t => {
                         const detectedGender = teamGenderMap[t.team_id];
                         return detectedGender === requiredGender;
@@ -353,8 +371,6 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
         const { data: teamDetails } = await supabaseClient.from('teams').select('id, name').in('id', validWinnerIds);
         candidates = (teamDetails || []).map(t => ({ id: t.id, name: t.name }));
     }
-
-    console.log(`[DEBUG] Final Candidates for ${category}: ${candidates.length}`);
 
     if (candidates.length < 2) return showToast(`No candidates for ${category} next round.`, "info");
 
@@ -472,21 +488,47 @@ async function confirmForceWinner(sportId, sportName, isESport) {
     window.loadSportsList();
 }
 
-// --- 11. MATCH LIST ---
+// --- 11. MATCH LIST (UPDATED WITH PAGINATION) ---
 window.loadMatches = async function(statusFilter) {
     currentMatchViewFilter = statusFilter;
     const container = document.getElementById('matches-grid');
     if(!container) return;
     container.innerHTML = '<p class="col-span-3 text-center py-10">Loading...</p>';
 
-    const { data: matches } = await supabaseClient.from('matches').select('*, sports(name, is_performance)').eq('status', statusFilter).order('start_time', { ascending: true });
+    // Loop to fetch all matches > 1000
+    let allMatches = [];
+    let from = 0;
+    const step = 1000;
+    let hasMore = true;
 
-    if (!matches || matches.length === 0) {
+    while (hasMore) {
+        const { data, error } = await supabaseClient
+            .from('matches')
+            .select('*, sports(name, is_performance)')
+            .eq('status', statusFilter)
+            .order('start_time', { ascending: true })
+            .range(from, from + step - 1);
+
+        if (error) {
+            console.error(error);
+            break;
+        }
+
+        if (data && data.length > 0) {
+            allMatches = allMatches.concat(data);
+            if (data.length < step) hasMore = false;
+            else from += step;
+        } else {
+            hasMore = false;
+        }
+    }
+
+    if (!allMatches || allMatches.length === 0) {
         container.innerHTML = `<p class="col-span-3 text-center py-10 text-gray-400">No matches found.</p>`;
         return;
     }
 
-    container.innerHTML = matches.map(m => `
+    container.innerHTML = allMatches.map(m => `
         <div class="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm transition-all hover:shadow-md">
             <span class="text-[10px] font-bold bg-gray-100 px-2 py-1 rounded text-gray-500 uppercase tracking-widest">${m.sports.name}</span>
             <div class="py-4 text-center">
