@@ -22,7 +22,7 @@ let currentMatchViewFilter = 'Scheduled';
 
 // Data Caches
 let allTeamsCache = []; 
-let allMatchesCache = []; // New Cache for Matches
+let allMatchesCache = []; 
 let dataCache = []; 
 let allRegistrationsCache = []; 
 let currentEditingTeamId = null;
@@ -152,7 +152,7 @@ window.switchView = function(viewId) {
 
     dataCache = [];
     if(viewId === 'users') loadUsersList();
-    if(viewId === 'matches') loadMatches(); // No params, uses filters
+    if(viewId === 'matches') loadMatches(); 
     if(viewId === 'teams') loadTeamsList();
     if(viewId === 'registrations') loadRegistrationsList();
 }
@@ -179,7 +179,7 @@ window.exportCurrentPage = function(type) {
     }
 }
 
-// --- 7b. NEW SQUADS EXPORT (PDF & EXCEL) ---
+// --- 7b. SQUADS EXPORT (PDF & EXCEL) ---
 
 async function fetchSquadsData() {
     const { data: members, error } = await adminClient
@@ -355,9 +355,6 @@ window.loadMatches = async function() {
         sportSelect.innerHTML = `<option value="">All Sports</option>` + sports.map(s => `<option value="${s}">${s}</option>`).join('');
     }
 
-    // Default: Show Scheduled if first load? No, show all or let filter handle it
-    // But user might want to see Scheduled by default. 
-    // Let's set the status filter to Scheduled by default if it's empty
     const statusSelect = document.getElementById('filter-match-status');
     if(statusSelect && statusSelect.value === "") statusSelect.value = "Scheduled";
 
@@ -398,8 +395,6 @@ window.filterMatches = function() {
             if(!tags.includes('junior') && !tags.includes('jr') && !tags.includes('fy') && !tags.includes('sy')) return false;
         }
         if(classFilter === 'Senior') {
-            // If it explicitly says senior/degree OR if it's not junior
-            // Safer: must NOT be junior
             if(tags.includes('junior') || tags.includes('jr') || tags.includes('fy') || tags.includes('sy')) return false;
         }
 
@@ -414,22 +409,26 @@ window.filterMatches = function() {
         return 0;
     });
 
-    // Prepare Cache for Export
-    dataCache = filtered.map(m => ({
-        "Sport": m.sports?.name || 'Unknown',
-        "Type": m.match_type,
-        "Team 1": m.team1_name,
-        "Team 2": m.team2_name || '-',
-        "Status": m.status,
-        "Date": new Date(m.start_time).toLocaleDateString(),
-        "Time": new Date(m.start_time).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' }),
-        "Location": m.location || 'N/A'
-    }));
+    // Prepare Cache for Export - UPDATED TO SHOW UTC TIME
+    dataCache = filtered.map(m => {
+        const d = new Date(m.start_time);
+        return {
+            "Sport": m.sports?.name || 'Unknown',
+            "Type": m.match_type,
+            "Team 1": m.team1_name,
+            "Team 2": m.team2_name || '-',
+            "Status": m.status,
+            // FORCE UTC DISPLAY
+            "Date": d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }),
+            "Time": d.toLocaleTimeString('en-US', { hour: '2-digit', minute:'2-digit', timeZone: 'UTC' }),
+            "Location": m.location || 'N/A'
+        };
+    });
 
     renderMatches(filtered);
 }
 
-// 3. Render
+// 3. Render - UPDATED TO SHOW UTC TIME
 function renderMatches(matches) {
     const container = document.getElementById('matches-grid');
     if(!container) return;
@@ -440,10 +439,10 @@ function renderMatches(matches) {
     }
 
     container.innerHTML = matches.map(m => {
-        // Date Formatting
+        // FORCE UTC DISPLAY on cards
         const d = new Date(m.start_time);
-        const dateStr = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-        const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' });
+        const dateStr = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+        const timeStr = d.toLocaleTimeString('en-US', { hour: '2-digit', minute:'2-digit', timeZone: 'UTC' });
         const fullDateTime = `${dateStr}, ${timeStr}`;
 
         return `
