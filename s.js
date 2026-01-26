@@ -103,10 +103,14 @@ window.switchView = function(viewId) {
     if(navBtn) navBtn.classList.add('active');
 
     const titleEl = document.getElementById('page-title');
-    if(titleEl) titleEl.innerText = viewId.charAt(0).toUpperCase() + viewId.slice(1);
+    if(titleEl) {
+        if(viewId === 'manual-schedule') titleEl.innerText = 'Manual Scheduling';
+        else titleEl.innerText = viewId.charAt(0).toUpperCase() + viewId.slice(1);
+    }
 
     if(viewId === 'sports') window.loadSportsList();
     if(viewId === 'matches') { setupMatchFilters(); window.loadMatches('Scheduled'); }
+    if(viewId === 'manual-schedule') window.loadManualScheduleView();
 }
 
 // --- 7. DASHBOARD STATS ---
@@ -198,7 +202,114 @@ window.loadSportsList = async function() {
     lucide.createIcons();
 }
 
-// --- 9. SCHEDULER ---
+// --- 9. SCHEDULER & MANUAL SCHEDULE ---
+
+// NEW: Load Manual Schedule View
+window.loadManualScheduleView = async function() {
+    const sportSelect = document.getElementById('manual-sport');
+    sportSelect.innerHTML = '<option value="">Loading...</option>';
+    
+    // Fetch Sports
+    const { data: sports } = await supabaseClient.from('sports').select('id, name').order('name');
+    
+    sportSelect.innerHTML = '<option value="">-- Choose Sport --</option>';
+    if(sports) {
+        sports.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s.id;
+            opt.innerText = s.name;
+            sportSelect.appendChild(opt);
+        });
+    }
+}
+
+// NEW: Handle Sport Change in Manual View
+window.handleManualSportChange = async function() {
+    const sportId = document.getElementById('manual-sport').value;
+    const t1Select = document.getElementById('manual-team1');
+    const t2Select = document.getElementById('manual-team2');
+    
+    t1Select.innerHTML = '<option value="">Loading...</option>';
+    t2Select.innerHTML = '<option value="">Loading...</option>';
+
+    if(!sportId) {
+        t1Select.innerHTML = '<option value="">-- Select Sport First --</option>';
+        t2Select.innerHTML = '<option value="">-- Select Sport First --</option>';
+        return;
+    }
+
+    // Fetch Teams for Sport (using Pagination if needed, though teams usually < 1000)
+    let allTeams = [];
+    let from = 0;
+    const step = 1000;
+    let hasMore = true;
+
+    while (hasMore) {
+        const { data, error } = await supabaseClient
+            .from('teams')
+            .select('id, name')
+            .eq('sport_id', sportId)
+            .order('name')
+            .range(from, from + step - 1);
+        
+        if (data && data.length > 0) {
+            allTeams = allTeams.concat(data);
+            if (data.length < step) hasMore = false; else from += step;
+        } else {
+            hasMore = false;
+        }
+    }
+
+    const opts = '<option value="">-- Select Team --</option>' + 
+                 allTeams.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+    
+    t1Select.innerHTML = opts;
+    t2Select.innerHTML = opts;
+}
+
+// NEW: Submit Manual Schedule
+window.submitManualSchedule = async function(e) {
+    e.preventDefault();
+    
+    const sportId = document.getElementById('manual-sport').value;
+    const matchType = document.getElementById('manual-type').value;
+    const round = document.getElementById('manual-round').value;
+    const t1Id = document.getElementById('manual-team1').value;
+    const t2Id = document.getElementById('manual-team2').value;
+    const time = document.getElementById('manual-time').value;
+    const location = document.getElementById('manual-location').value;
+
+    if(t1Id === t2Id) return showToast("Team 1 and Team 2 cannot be the same.", "error");
+
+    const t1Name = document.getElementById('manual-team1').options[document.getElementById('manual-team1').selectedIndex].text;
+    const t2Name = document.getElementById('manual-team2').options[document.getElementById('manual-team2').selectedIndex].text;
+
+    const payload = {
+        sport_id: parseInt(sportId),
+        match_type: matchType,
+        round_number: parseInt(round),
+        team1_id: t1Id,
+        team2_id: t2Id,
+        team1_name: t1Name,
+        team2_name: t2Name,
+        start_time: new Date(time).toISOString(),
+        location: location,
+        status: 'Scheduled',
+        is_live: false
+    };
+
+    const { error } = await supabaseClient.from('matches').insert(payload);
+
+    if(error) {
+        showToast("Failed to schedule: " + error.message, "error");
+    } else {
+        showToast("Match Scheduled Successfully!", "success");
+        window.switchView('matches'); // Go to matches list
+    }
+}
+
+// --- EXISTING SCHEDULER LOGIC ---
+
 window.handleScheduleClick = async function(sportId, sportName, isPerformance, sportType, category) {
     if (isPerformance) {
         if (confirm(`Start ${sportName} (${category})?`)) await initPerformanceEvent(sportId, sportName, category);
@@ -207,8 +318,7 @@ window.handleScheduleClick = async function(sportId, sportName, isPerformance, s
     }
 }
 
-// --- NEW HELPER FUNCTIONS FOR BULK FETCHING ---
-
+// Helper: Fetch all registrations with pagination (>1000 rows)
 async function fetchAllRegistrations(sportId) {
     let allRegs = [];
     let from = 0;
@@ -238,6 +348,7 @@ async function fetchAllRegistrations(sportId) {
     return allRegs;
 }
 
+// Helper: Fetch all team members with pagination (>1000 rows)
 async function fetchAllTeamMembers(teamIds) {
     let allMembers = [];
     let from = 0;
@@ -267,12 +378,8 @@ async function fetchAllTeamMembers(teamIds) {
     return allMembers;
 }
 
-// --- END NEW HELPER FUNCTIONS ---
-
 async function initPerformanceEvent(sportId, sportName, category) {
     showToast("Fetching participants... please wait", "info");
-    
-    // UPDATED: Use fetchAllRegistrations instead of standard select
     const regs = await fetchAllRegistrations(sportId);
 
     if (!regs || regs.length === 0) return showToast("No registrations found.", "error");
@@ -288,7 +395,6 @@ async function initPerformanceEvent(sportId, sportName, category) {
         
         let genderMatch = true;
         if (category !== 'Global') {
-             // Flexible gender check
              if (isBoys) genderMatch = (gender.toLowerCase() === 'male' || gender.toLowerCase() === 'boy');
              else genderMatch = (gender.toLowerCase() === 'female' || gender.toLowerCase() === 'girl');
         }
@@ -323,7 +429,6 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
     const intSportId = parseInt(sportId); 
     const isESport = category === 'Global';
 
-    // Check for existing active matches
     const { data: catMatches } = await supabaseClient.from('matches')
         .select('round_number, status, match_type')
         .eq('sport_id', intSportId)
@@ -335,7 +440,6 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
     let nextRound = 1, candidates = [];
 
     if (!catMatches || catMatches.length === 0) {
-        // --- ROUND 1 LOGIC ---
         if (sportType === 'Individual') await supabaseClient.rpc('prepare_individual_teams', { sport_id_input: intSportId });
         await supabaseClient.rpc('auto_lock_tournament_teams', { sport_id_input: intSportId });
         
@@ -347,36 +451,24 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
             if (isESport) {
                 candidates = allTeams.map(t => ({ id: t.team_id, name: t.team_name }));
             } else {
-                // IMPORTANT: Filter by Age (Junior/Senior) AND Gender (Male/Female)
-                
-                // 1. Determine requirements
                 const requiredAge = category.toLowerCase().includes('junior') ? 'junior' : 'senior';
                 const requiredGender = category.toLowerCase().includes('boys') ? 'male' : 'female';
 
-                // 2. Filter teams by Age first
                 const ageFilteredTeams = allTeams.filter(t => (t.category || '').toLowerCase().trim() === requiredAge);
-                
-                // 3. Fetch genders for these teams
                 const teamIds = ageFilteredTeams.map(t => t.team_id);
                 
                 if (teamIds.length > 0) {
-                    // UPDATED: Use fetchAllTeamMembers loop instead of direct select
                     const members = await fetchAllTeamMembers(teamIds);
-
-                    // Map TeamID -> Gender (Male/Female)
                     const teamGenderMap = {};
                     if(members) {
                         members.forEach(m => {
                             if(!m.users) return;
                             const g = (m.users.gender || '').toLowerCase();
-                            // Standardize gender string
                             const stdG = (g === 'male' || g === 'boy' || g === 'm') ? 'male' : 'female';
-                            // Store first member's gender as team gender
                             if (!teamGenderMap[m.team_id]) teamGenderMap[m.team_id] = stdG;
                         });
                     }
 
-                    // 4. Final Filter: Keep only matching gender
                     candidates = ageFilteredTeams.filter(t => {
                         const detectedGender = teamGenderMap[t.team_id];
                         return detectedGender === requiredGender;
@@ -385,7 +477,6 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
             }
         }
     } else {
-        // --- NEXT ROUND LOGIC ---
         const lastRound = catMatches[0].round_number;
         nextRound = lastRound + 1;
         const { data: winners } = await supabaseClient.from('matches')
