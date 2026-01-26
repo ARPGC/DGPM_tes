@@ -22,6 +22,7 @@ let currentMatchViewFilter = 'Scheduled';
 
 // Data Caches
 let allTeamsCache = []; 
+let allMatchesCache = []; // New Cache for Matches
 let dataCache = []; 
 let allRegistrationsCache = []; 
 let currentEditingTeamId = null;
@@ -128,21 +129,30 @@ window.switchView = function(viewId) {
         else globalActions.classList.add('hidden');
     }
 
-    // Toggle Squad Buttons (Only for Teams view)
+    // Toggle Buttons based on View
     const squadPdfBtn = document.getElementById('btn-squad-pdf');
     const squadExcelBtn = document.getElementById('btn-squad-excel');
-    
+    const matchPdfBtn = document.getElementById('btn-match-pdf');
+    const matchExcelBtn = document.getElementById('btn-match-excel');
+
+    // Hide all specific buttons first
+    if(squadPdfBtn) squadPdfBtn.classList.add('hidden');
+    if(squadExcelBtn) squadExcelBtn.classList.add('hidden');
+    if(matchPdfBtn) matchPdfBtn.classList.add('hidden');
+    if(matchExcelBtn) matchExcelBtn.classList.add('hidden');
+
     if (viewId === 'teams') {
         if(squadPdfBtn) squadPdfBtn.classList.remove('hidden');
         if(squadExcelBtn) squadExcelBtn.classList.remove('hidden');
-    } else {
-        if(squadPdfBtn) squadPdfBtn.classList.add('hidden');
-        if(squadExcelBtn) squadExcelBtn.classList.add('hidden');
+    } 
+    else if (viewId === 'matches') {
+        if(matchPdfBtn) matchPdfBtn.classList.remove('hidden');
+        if(matchExcelBtn) matchExcelBtn.classList.remove('hidden');
     }
 
     dataCache = [];
     if(viewId === 'users') loadUsersList();
-    if(viewId === 'matches') { setupMatchFilters(); loadMatches('Scheduled'); }
+    if(viewId === 'matches') loadMatches(); // No params, uses filters
     if(viewId === 'teams') loadTeamsList();
     if(viewId === 'registrations') loadRegistrationsList();
 }
@@ -172,7 +182,6 @@ window.exportCurrentPage = function(type) {
 // --- 7b. NEW SQUADS EXPORT (PDF & EXCEL) ---
 
 async function fetchSquadsData() {
-    // 1. Fetch Deep Data (Teams -> Members -> Users)
     const { data: members, error } = await adminClient
         .from('team_members')
         .select(`
@@ -194,13 +203,11 @@ async function fetchSquadsData() {
 }
 
 function getFilteredSquads(members) {
-    // 2. Get Active Filters
     const sportFilter = document.getElementById('filter-team-sport')?.value || '';
     const statusFilter = document.getElementById('filter-team-status')?.value || '';
     const genderFilter = document.getElementById('filter-team-gender')?.value || '';
     const classFilter = document.getElementById('filter-team-class')?.value || '';
 
-    // 3. Filter Members based on Team attributes
     return members.filter(m => {
         const t = m.teams;
         if (!t) return false;
@@ -218,7 +225,6 @@ function getFilteredSquads(members) {
     });
 }
 
-// NEW: SQUADS EXCEL
 window.downloadSquadsExcel = async function() {
     showToast("Generating Squads Excel...", "success");
     const members = await fetchSquadsData();
@@ -227,7 +233,6 @@ window.downloadSquadsExcel = async function() {
     const filtered = getFilteredSquads(members);
     if(filtered.length === 0) return showToast("No squads found with current filters", "error");
 
-    // Flatten Data for Excel
     const excelData = filtered.map(m => ({
         "Team Name": m.teams.name,
         "Sport": m.teams.sports?.name || 'Unknown',
@@ -240,18 +245,15 @@ window.downloadSquadsExcel = async function() {
         "Player ID": m.users.student_id || '-'
     }));
 
-    // Sort by Sport, then Team Name
     excelData.sort((a, b) => {
         if(a.Sport !== b.Sport) return a.Sport.localeCompare(b.Sport);
         return a["Team Name"].localeCompare(b["Team Name"]);
     });
 
-    // Create Worksheet
     const ws = XLSX.utils.json_to_sheet(excelData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Squads_List");
 
-    // Download
     const filename = `Urja_Full_Squads_${new Date().toISOString().split('T')[0]}.xlsx`;
     XLSX.writeFile(wb, filename);
     showToast("Excel Downloaded!", "success");
@@ -265,7 +267,6 @@ window.downloadSquadsPDF = async function() {
     const filtered = getFilteredSquads(members);
     if(filtered.length === 0) return showToast("No squads found with current filters", "error");
 
-    // Group by Team for PDF
     const grouped = {};
     filtered.forEach(m => {
         const teamName = m.teams.name;
@@ -279,53 +280,29 @@ window.downloadSquadsPDF = async function() {
         grouped[teamName].players.push(m.users);
     });
 
-    // Generate PDF
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
-
     doc.setFontSize(22);
     doc.text("URJA 2026 - OFFICIAL SQUADS LIST", 14, 20);
     doc.setFontSize(10);
     doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 26);
     
-    // Add subtitle for filters
-    const filterText = [];
-    const sportFilter = document.getElementById('filter-team-sport')?.value;
-    const genderFilter = document.getElementById('filter-team-gender')?.value;
-    const classFilter = document.getElementById('filter-team-class')?.value;
-    if(sportFilter) filterText.push(sportFilter);
-    if(classFilter) filterText.push(classFilter);
-    if(genderFilter) filterText.push(genderFilter);
-    if(filterText.length > 0) {
-        doc.setFontSize(10);
-        doc.setTextColor(100);
-        doc.text(`Filters: ${filterText.join(' | ')}`, 14, 32);
-    }
-
     let yPos = 40;
 
     Object.keys(grouped).sort().forEach(teamName => {
         const team = grouped[teamName];
-        
-        // Check for page break
         if (yPos > 250) { doc.addPage(); yPos = 20; }
 
-        // Team Header
         doc.setFontSize(14);
-        doc.setTextColor(79, 70, 229); // Indigo
+        doc.setTextColor(79, 70, 229);
         doc.text(`${teamName} (${team.sport})`, 14, yPos);
         
         doc.setFontSize(10);
         doc.setTextColor(100);
         doc.text(`Captain: ${team.captain}`, 14, yPos + 6);
 
-        // Table Body
         const rows = team.players.map((p, i) => [
-            i + 1,
-            `${p.first_name} ${p.last_name}`,
-            p.class_name || '-',
-            p.gender || '-',
-            p.mobile || '-'
+            i + 1, `${p.first_name} ${p.last_name}`, p.class_name || '-', p.gender || '-', p.mobile || '-'
         ]);
 
         doc.autoTable({
@@ -337,7 +314,6 @@ window.downloadSquadsPDF = async function() {
             styles: { fontSize: 9 },
             margin: { left: 14 }
         });
-
         yPos = doc.lastAutoTable.finalY + 15;
     });
 
@@ -356,7 +332,203 @@ async function loadDashboardStats() {
     document.getElementById('dash-total-teams').innerText = teamCount || 0;
 }
 
-// --- 9. MATCH ACTIONS ---
+// --- 9. MATCH ACTIONS (UPDATED) ---
+
+// 1. Fetch & Filter
+window.loadMatches = async function() {
+    const container = document.getElementById('matches-grid');
+    if(!container) return;
+    container.innerHTML = '<p class="col-span-3 text-center text-gray-400 py-10">Loading schedule...</p>';
+
+    // Fetch All Matches
+    const { data: matches } = await adminClient
+        .from('matches')
+        .select('*, sports(name, is_performance, unit)')
+        .order('start_time', { ascending: true });
+
+    allMatchesCache = matches || [];
+
+    // Populate Sport Dropdown for Matches
+    const sports = [...new Set(allMatchesCache.map(m => m.sports?.name).filter(Boolean))].sort();
+    const sportSelect = document.getElementById('filter-match-sport');
+    if(sportSelect && sportSelect.children.length <= 1) {
+        sportSelect.innerHTML = `<option value="">All Sports</option>` + sports.map(s => `<option value="${s}">${s}</option>`).join('');
+    }
+
+    // Default: Show Scheduled if first load? No, show all or let filter handle it
+    // But user might want to see Scheduled by default. 
+    // Let's set the status filter to Scheduled by default if it's empty
+    const statusSelect = document.getElementById('filter-match-status');
+    if(statusSelect && statusSelect.value === "") statusSelect.value = "Scheduled";
+
+    filterMatches();
+}
+
+// 2. Filter Logic
+window.filterMatches = function() {
+    const search = document.getElementById('match-search-input')?.value.toLowerCase() || '';
+    const sportFilter = document.getElementById('filter-match-sport')?.value || '';
+    const genderFilter = document.getElementById('filter-match-gender')?.value || '';
+    const classFilter = document.getElementById('filter-match-class')?.value || '';
+    const statusFilter = document.getElementById('filter-match-status')?.value || '';
+    const sortOrder = document.getElementById('sort-match-order')?.value || 'time_asc';
+
+    let filtered = allMatchesCache.filter(m => {
+        // Search
+        const searchTarget = `${m.team1_name} ${m.team2_name} ${m.location || ''}`.toLowerCase();
+        if(search && !searchTarget.includes(search)) return false;
+
+        // Sport & Status
+        if(sportFilter && m.sports?.name !== sportFilter) return false;
+        if(statusFilter && m.status !== statusFilter) return false;
+
+        // Gender & Class Logic (Using match_type or sport name)
+        const tags = (m.match_type + ' ' + (m.sports?.name || '')).toLowerCase();
+        
+        // Gender
+        if(genderFilter === 'Male') {
+            if(!tags.includes('boys') && !tags.includes('male') && !tags.includes('men')) return false;
+        }
+        if(genderFilter === 'Female') {
+             if(!tags.includes('girls') && !tags.includes('female') && !tags.includes('women') && !tags.includes('ladies')) return false;
+        }
+
+        // Category (Class)
+        if(classFilter === 'Junior') {
+            if(!tags.includes('junior') && !tags.includes('jr') && !tags.includes('fy') && !tags.includes('sy')) return false;
+        }
+        if(classFilter === 'Senior') {
+            // If it explicitly says senior/degree OR if it's not junior
+            // Safer: must NOT be junior
+            if(tags.includes('junior') || tags.includes('jr') || tags.includes('fy') || tags.includes('sy')) return false;
+        }
+
+        return true;
+    });
+
+    // Sort
+    filtered.sort((a, b) => {
+        if(sortOrder === 'time_asc') return new Date(a.start_time) - new Date(b.start_time);
+        if(sortOrder === 'time_desc') return new Date(b.start_time) - new Date(a.start_time);
+        if(sortOrder === 'sport') return (a.sports?.name || '').localeCompare(b.sports?.name || '');
+        return 0;
+    });
+
+    // Prepare Cache for Export
+    dataCache = filtered.map(m => ({
+        "Sport": m.sports?.name || 'Unknown',
+        "Type": m.match_type,
+        "Team 1": m.team1_name,
+        "Team 2": m.team2_name || '-',
+        "Status": m.status,
+        "Date": new Date(m.start_time).toLocaleDateString(),
+        "Time": new Date(m.start_time).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' }),
+        "Location": m.location || 'N/A'
+    }));
+
+    renderMatches(filtered);
+}
+
+// 3. Render
+function renderMatches(matches) {
+    const container = document.getElementById('matches-grid');
+    if(!container) return;
+
+    if(matches.length === 0) {
+        container.innerHTML = `<p class="col-span-3 text-center text-gray-400 py-8">No matches found matching filters.</p>`;
+        return;
+    }
+
+    container.innerHTML = matches.map(m => {
+        // Date Formatting
+        const d = new Date(m.start_time);
+        const dateStr = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+        const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' });
+        const fullDateTime = `${dateStr}, ${timeStr}`;
+
+        return `
+        <div class="bg-white p-5 rounded-3xl border border-gray-200 shadow-sm relative group hover:border-brand-primary/30 transition-all">
+            <div class="flex justify-between items-center mb-3">
+                 <span class="text-[10px] font-bold uppercase px-2 py-1 rounded ${m.status==='Live' ? 'bg-red-100 text-red-600 animate-pulse' : 'bg-gray-100 text-gray-500'}">${m.status}</span>
+                 <span class="text-[10px] font-bold uppercase text-gray-400">${m.sports.name}</span>
+            </div>
+
+            ${m.sports.is_performance ? 
+                `<div class="text-center py-2"><h4 class="font-black text-xl text-gray-900 truncate">${m.team1_name}</h4><p class="text-xs text-gray-400 mt-1">${m.match_type}</p></div>`
+            : 
+                `<div class="flex justify-between items-center font-bold text-lg text-gray-900 px-1 gap-2">
+                    <span class="truncate w-1/2 text-right">${m.team1_name}</span>
+                    <span class="text-xs text-gray-300">VS</span>
+                    <span class="truncate w-1/2 text-left">${m.team2_name}</span>
+                </div>`
+            }
+
+            <div class="mt-4 pt-3 border-t border-gray-100 flex flex-col gap-1">
+                 <div class="flex justify-between items-center">
+                    <span class="text-xs font-bold text-gray-600 flex items-center gap-1">
+                        <i data-lucide="clock" class="w-3 h-3 text-gray-400"></i> ${fullDateTime}
+                    </span>
+                    <span class="text-xs text-gray-400 truncate max-w-[100px]">${m.location || 'N/A'}</span>
+                 </div>
+
+                 <div class="flex justify-end mt-2 gap-2">
+                     ${m.status === 'Scheduled' ? `<button onclick="startMatch('${m.id}')" class="text-[10px] font-bold bg-green-50 text-green-600 px-3 py-1.5 rounded-lg hover:bg-green-100">Start Match</button>` : ''}
+                     ${m.status === 'Live' && m.sports.is_performance ? `<button onclick="endPerformanceEvent('${m.id}')" class="text-[10px] font-bold bg-red-50 text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-100">End Event</button>` : ''}
+                 </div>
+            </div>
+        </div>
+    `}).join('');
+    
+    if(window.lucide) lucide.createIcons();
+}
+
+window.resetMatchFilters = function() {
+    document.getElementById('match-search-input').value = '';
+    document.getElementById('filter-match-sport').value = '';
+    document.getElementById('filter-match-gender').value = '';
+    document.getElementById('filter-match-class').value = '';
+    document.getElementById('filter-match-status').value = 'Scheduled'; // Reset to Default
+    document.getElementById('sort-match-order').value = 'time_asc';
+    filterMatches();
+}
+
+// 4. Exports for Matches
+window.downloadMatchesExcel = function() {
+    if (!dataCache || dataCache.length === 0) return showToast("No matches to export", "error");
+    const ws = XLSX.utils.json_to_sheet(dataCache);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Matches");
+    XLSX.writeFile(wb, `Urja_Schedule_${new Date().toISOString().split('T')[0]}.xlsx`);
+    showToast("Matches Excel Downloaded", "success");
+}
+
+window.downloadMatchesPDF = function() {
+    if (!dataCache || dataCache.length === 0) return showToast("No matches to export", "error");
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF('l'); // Landscape
+    
+    doc.setFontSize(18);
+    doc.text("URJA 2026 - MATCH SCHEDULE", 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 26);
+
+    const headers = ["Date", "Time", "Sport", "Type", "Team 1", "Team 2", "Status", "Location"];
+    const rows = dataCache.map(m => [m.Date, m.Time, m.Sport, m.Type, m["Team 1"], m["Team 2"], m.Status, m.Location]);
+
+    doc.autoTable({
+        head: [headers],
+        body: rows,
+        startY: 35,
+        theme: 'grid',
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: [79, 70, 229] }
+    });
+    doc.save(`Urja_Schedule_${new Date().toISOString().split('T')[0]}.pdf`);
+    showToast("Matches PDF Downloaded", "success");
+}
+
+
+// --- 9b. EXISTING MATCH FUNCTIONS ---
 window.endPerformanceEvent = async function(matchId) {
     if (!confirm("End event and calculate winners?")) return;
 
@@ -387,7 +559,7 @@ window.endPerformanceEvent = async function(matchId) {
 
     showToast("Event Ended!", "success");
     syncToRealtime(matchId);
-    loadMatches(currentMatchViewFilter); 
+    loadMatches(); // REFRESH LIST
 }
 
 window.startMatch = async function(matchId) {
@@ -395,7 +567,7 @@ window.startMatch = async function(matchId) {
     await adminClient.from('matches').update({ status: 'Live', is_live: true }).eq('id', matchId);
     showToast("Match is LIVE!", "success");
     syncToRealtime(matchId);
-    loadMatches('Live');
+    loadMatches(); // REFRESH LIST
 }
 
 // --- 10. TEAMS (UPDATED) ---
@@ -738,54 +910,7 @@ window.filterUsers = function() {
     document.querySelectorAll('#users-table-body tr').forEach(r => r.style.display = r.innerText.toLowerCase().includes(q) ? '' : 'none');
 }
 
-// --- UTILS ---
-window.loadMatches = async function(statusFilter) {
-    currentMatchViewFilter = statusFilter;
-    const container = document.getElementById('matches-grid');
-    if(!container) return;
-    
-    // Setup Tabs
-    const tabs = document.getElementById('match-filter-tabs');
-    if(!tabs) {
-        const div = document.createElement('div');
-        div.id = 'match-filter-tabs';
-        div.className = "flex gap-2 mb-6 border-b border-gray-200 pb-2";
-        div.innerHTML = `
-            <button onclick="loadMatches('Scheduled')" class="px-4 py-2 text-sm font-bold">Scheduled</button>
-            <button onclick="loadMatches('Live')" class="px-4 py-2 text-sm font-bold">Live</button>
-            <button onclick="loadMatches('Completed')" class="px-4 py-2 text-sm font-bold">Completed</button>
-        `;
-        container.parentElement.insertBefore(div, container);
-    }
-    
-    container.innerHTML = 'Loading...';
-    const { data: matches } = await adminClient.from('matches').select('*, sports(name, is_performance, unit)').eq('status', statusFilter).order('start_time', { ascending: true });
-    
-    if(!matches || !matches.length) { container.innerHTML = `<p class="col-span-3 text-center text-gray-400">No ${statusFilter} matches.</p>`; return; }
-
-    container.innerHTML = matches.map(m => `
-        <div class="bg-white p-5 rounded-3xl border border-gray-200 shadow-sm relative">
-            <div class="flex justify-between items-center mb-4">
-                 <span class="text-xs font-bold text-gray-500">${m.status}</span>
-                 <span class="text-xs text-gray-500 uppercase font-bold">${m.sports.name}</span>
-            </div>
-            ${m.sports.is_performance ? 
-                `<div class="text-center py-2"><h4 class="font-black text-xl text-gray-900">${m.team1_name}</h4></div>`
-            : 
-                `<div class="flex justify-between font-bold text-lg text-gray-900 px-2"><span>${m.team1_name}</span><span>VS</span><span>${m.team2_name}</span></div>`
-            }
-            <div class="mt-4 pt-4 border-t border-gray-100 flex justify-between">
-                 <span class="text-xs text-gray-400">${m.location || 'N/A'}</span>
-                 ${m.status === 'Scheduled' ? `<button onclick="startMatch('${m.id}')" class="text-xs bg-green-500 text-white px-3 py-1 rounded">Start</button>` : ''}
-                 ${m.status === 'Live' && m.sports.is_performance ? `<button onclick="endPerformanceEvent('${m.id}')" class="text-xs bg-red-500 text-white px-3 py-1 rounded">End Event</button>` : ''}
-            </div>
-        </div>
-    `).join('');
-}
-
 window.closeModal = (id) => document.getElementById(id).classList.add('hidden');
-
-function setupMatchFilters() { /* handled in loadMatches */ }
 
 function injectToastContainer() {
     if(document.getElementById('toast-container')) return;
