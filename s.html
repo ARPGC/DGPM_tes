@@ -276,5 +276,32 @@
         </div>
     </div>
     
+    <div id="modal-add-live-participant" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+        <div class="bg-white p-6 rounded-3xl w-full max-w-sm shadow-2xl relative">
+            <button onclick="closeModal('modal-add-live-participant')" class="absolute top-4 right-4 p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors">
+                <i data-lucide="x" class="w-4 h-4 text-gray-500"></i>
+            </button>
+            <h3 class="font-black text-2xl mb-1 text-gray-900">Quick Register</h3>
+            <p class="text-xs text-gray-500 font-bold mb-6">Add student to live event</p>
+            
+            <form onsubmit="submitLiveParticipant(event)" class="space-y-4">
+                <input type="hidden" id="live-add-match-id">
+                <div>
+                    <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wide ml-1 mb-1 block">Student Name</label>
+                    <input type="text" id="live-add-name" placeholder="e.g. Rahul Sharma" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-brand-primary transition-colors" required>
+                </div>
+                
+                <div>
+                    <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wide ml-1 mb-1 block">Student ID / Class</label>
+                    <input type="text" id="live-add-id" placeholder="e.g. SYJC Sci" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-brand-primary transition-colors" required>
+                </div>
+
+                <button type="submit" class="w-full py-3.5 bg-indigo-600 text-white font-bold rounded-xl shadow-lg active:scale-95 transition-transform mt-2 uppercase tracking-wide flex justify-center items-center gap-2">
+                    <i data-lucide="user-plus" class="w-4 h-4"></i> Add to Event
+                </button>
+            </form>
+        </div>
+    </div>
+
 </body>
 </html>
