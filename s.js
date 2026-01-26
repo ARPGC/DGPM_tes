@@ -228,17 +228,20 @@ window.handleManualSportChange = async function() {
     const sportId = document.getElementById('manual-sport').value;
     const t1Select = document.getElementById('manual-team1');
     const t2Select = document.getElementById('manual-team2');
+    const isBye = document.getElementById('manual-is-bye').checked;
     
     t1Select.innerHTML = '<option value="">Loading...</option>';
-    t2Select.innerHTML = '<option value="">Loading...</option>';
+    
+    // Only clear Team 2 if NOT in bye mode (in bye mode it stays fixed)
+    if(!isBye) t2Select.innerHTML = '<option value="">Loading...</option>';
 
     if(!sportId) {
         t1Select.innerHTML = '<option value="">-- Select Sport First --</option>';
-        t2Select.innerHTML = '<option value="">-- Select Sport First --</option>';
+        if(!isBye) t2Select.innerHTML = '<option value="">-- Select Sport First --</option>';
         return;
     }
 
-    // Fetch Teams for Sport (using Pagination if needed, though teams usually < 1000)
+    // Fetch Teams for Sport (using Pagination if needed)
     let allTeams = [];
     let from = 0;
     const step = 1000;
@@ -264,7 +267,25 @@ window.handleManualSportChange = async function() {
                  allTeams.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
     
     t1Select.innerHTML = opts;
-    t2Select.innerHTML = opts;
+    if(!isBye) t2Select.innerHTML = opts;
+}
+
+// NEW: Toggle Bye Mode
+window.toggleManualBye = function() {
+    const isBye = document.getElementById('manual-is-bye').checked;
+    const t2Select = document.getElementById('manual-team2');
+
+    if(isBye) {
+        t2Select.value = "";
+        t2Select.disabled = true;
+        t2Select.innerHTML = '<option value="">(BYE - No Opponent)</option>';
+        t2Select.classList.add('bg-gray-100');
+    } else {
+        t2Select.disabled = false;
+        t2Select.classList.remove('bg-gray-100');
+        // Reload teams for Team 2
+        handleManualSportChange();
+    }
 }
 
 // NEW: Submit Manual Schedule
@@ -275,14 +296,32 @@ window.submitManualSchedule = async function(e) {
     const matchType = document.getElementById('manual-type').value;
     const round = document.getElementById('manual-round').value;
     const t1Id = document.getElementById('manual-team1').value;
-    const t2Id = document.getElementById('manual-team2').value;
+    const isBye = document.getElementById('manual-is-bye').checked;
+    
+    let t2Id = document.getElementById('manual-team2').value;
     const time = document.getElementById('manual-time').value;
     const location = document.getElementById('manual-location').value;
 
-    if(t1Id === t2Id) return showToast("Team 1 and Team 2 cannot be the same.", "error");
+    if(!sportId || !t1Id) return showToast("Please select Sport and Team 1", "error");
+    
+    if(!isBye && !t2Id) return showToast("Please select Team 2", "error");
+    if(!isBye && t1Id === t2Id) return showToast("Team 1 and Team 2 cannot be the same.", "error");
 
     const t1Name = document.getElementById('manual-team1').options[document.getElementById('manual-team1').selectedIndex].text;
-    const t2Name = document.getElementById('manual-team2').options[document.getElementById('manual-team2').selectedIndex].text;
+    
+    let t2Name = "BYE";
+    let status = "Completed";
+    let winnerId = t1Id;
+    let winnerText = `${t1Name} (Bye)`;
+
+    if (!isBye) {
+        t2Name = document.getElementById('manual-team2').options[document.getElementById('manual-team2').selectedIndex].text;
+        status = "Scheduled";
+        winnerId = null;
+        winnerText = null;
+    } else {
+        t2Id = null;
+    }
 
     const payload = {
         sport_id: parseInt(sportId),
@@ -294,7 +333,9 @@ window.submitManualSchedule = async function(e) {
         team2_name: t2Name,
         start_time: new Date(time).toISOString(),
         location: location,
-        status: 'Scheduled',
+        status: status,
+        winner_id: winnerId,
+        winner_text: winnerText,
         is_live: false
     };
 
@@ -303,8 +344,8 @@ window.submitManualSchedule = async function(e) {
     if(error) {
         showToast("Failed to schedule: " + error.message, "error");
     } else {
-        showToast("Match Scheduled Successfully!", "success");
-        window.switchView('matches'); // Go to matches list
+        showToast("Match Published Successfully!", "success");
+        window.switchView('matches'); 
     }
 }
 
