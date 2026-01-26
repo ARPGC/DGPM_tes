@@ -179,29 +179,72 @@ window.exportCurrentPage = function(type) {
     }
 }
 
+// --- NEW FUNCTION: FETCH ALL RECORDS (Bypasses 1000 limit) ---
+async function fetchAllRecords(table, select, orderCol, ascending = false) {
+    let allRecords = [];
+    let from = 0;
+    const step = 1000;
+    let hasMore = true;
+
+    while (hasMore) {
+        const { data, error } = await adminClient
+            .from(table)
+            .select(select)
+            .order(orderCol, { ascending })
+            .range(from, from + step - 1);
+
+        if (error) {
+            console.error(`Error fetching ${table}:`, error);
+            showToast(`Error fetching ${table}`, "error");
+            return null;
+        }
+
+        if (data && data.length > 0) {
+            allRecords = allRecords.concat(data);
+            if (data.length < step) hasMore = false;
+            else from += step;
+        } else {
+            hasMore = false;
+        }
+    }
+    return allRecords;
+}
+
 // --- 7b. SQUADS EXPORT (PDF & EXCEL) ---
 
 async function fetchSquadsData() {
-    // FIX: Added .range(0, 9999) to get more than 1000 members
-    const { data: members, error } = await adminClient
-        .from('team_members')
-        .select(`
-            status,
-            users (first_name, last_name, class_name, gender, mobile, student_id),
-            teams (
-                id, name, status, 
-                sports(name), 
-                captain:users!captain_id(first_name, last_name, class_name, gender)
-            )
-        `)
-        .eq('status', 'Accepted')
-        .range(0, 9999);
+    // Custom Loop for Squads (because of the .eq filter)
+    let allMembers = [];
+    let from = 0;
+    const step = 1000;
+    let hasMore = true;
 
-    if(error || !members) {
-        showToast("Error fetching squad data", "error");
-        return null;
+    while (hasMore) {
+        const { data, error } = await adminClient
+            .from('team_members')
+            .select(`
+                status,
+                users (first_name, last_name, class_name, gender, mobile, student_id),
+                teams (
+                    id, name, status, 
+                    sports(name), 
+                    captain:users!captain_id(first_name, last_name, class_name, gender)
+                )
+            `)
+            .eq('status', 'Accepted')
+            .range(from, from + step - 1);
+
+        if (error) { showToast("Error fetching squad data", "error"); return null; }
+        
+        if (data && data.length > 0) {
+            allMembers = allMembers.concat(data);
+            if (data.length < step) hasMore = false;
+            else from += step;
+        } else {
+            hasMore = false;
+        }
     }
-    return members;
+    return allMembers;
 }
 
 function getFilteredSquads(members) {
@@ -342,12 +385,13 @@ window.loadMatches = async function() {
     if(!container) return;
     container.innerHTML = '<p class="col-span-3 text-center text-gray-400 py-10">Loading schedule...</p>';
 
-    // FIX: Added .range(0, 9999) to get all matches
-    const { data: matches } = await adminClient
-        .from('matches')
-        .select('*, sports(name, is_performance, unit)')
-        .order('start_time', { ascending: true })
-        .range(0, 9999);
+    // FIX: Use fetchAllRecords to get >1000 matches
+    const matches = await fetchAllRecords(
+        'matches',
+        '*, sports(name, is_performance, unit)',
+        'start_time',
+        true // ascending
+    );
 
     allMatchesCache = matches || [];
 
@@ -578,13 +622,13 @@ async function loadTeamsList() {
     if(!grid) return;
     grid.innerHTML = '<p class="col-span-3 text-center text-gray-400 py-10">Loading teams...</p>';
 
-    // Note: Search/Filter UI is now in HTML, handled by filterTeamsList
-    
-    // UPDATED QUERY: Added .range(0, 9999)
-    const { data: teams } = await adminClient.from('teams')
-        .select('*, sports(name, team_size), captain:users!captain_id(first_name, last_name, class_name, gender), team_members(status)')
-        .order('created_at', { ascending: false })
-        .range(0, 9999);
+    // FIX: Use fetchAllRecords to get >1000 teams
+    const teams = await fetchAllRecords(
+        'teams', 
+        '*, sports(name, team_size), captain:users!captain_id(first_name, last_name, class_name, gender), team_members(status)',
+        'created_at',
+        false // descending
+    );
 
     allTeamsCache = teams || [];
 
@@ -793,13 +837,15 @@ async function loadRegistrationsList() {
     if(!tbody) return;
     tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center">Loading...</td></tr>';
 
-    // FIX: Added .range(0, 9999) to get more than 1000 registrations
-    const { data: regs } = await adminClient.from('registrations')
-        .select(`id, created_at, users (first_name, last_name, student_id, class_name, gender, mobile, email), sports (name)`)
-        .order('created_at', { ascending: false })
-        .range(0, 9999);
+    // FIX: Use fetchAllRecords to get >1000 registrations
+    const regs = await fetchAllRecords(
+        'registrations',
+        `id, created_at, users (first_name, last_name, student_id, class_name, gender, mobile, email), sports (name)`,
+        'created_at',
+        false // descending
+    );
 
-    allRegistrationsCache = regs.map(r => ({
+    allRegistrationsCache = (regs || []).map(r => ({
         name: `${r.users.first_name} ${r.users.last_name}`,
         student_id: r.users.student_id,
         class: r.users.class_name,
@@ -869,15 +915,13 @@ async function loadUsersList() {
     if(!tbody) return;
     tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center">Loading...</td></tr>';
     
-    // FIX: Added .range(0, 9999) to get more than 1000 users
-    const { data: users } = await adminClient.from('users').select('*')
-        .order('created_at', { ascending: false })
-        .range(0, 9999);
+    // FIX: Use fetchAllRecords to get >1000 users
+    const users = await fetchAllRecords('users', '*', 'created_at', false);
         
     const { data: sports } = await adminClient.from('sports').select('id, name');
-    dataCache = users;
+    dataCache = users || [];
     
-    tbody.innerHTML = users.map(u => {
+    tbody.innerHTML = dataCache.map(u => {
         const sportOptions = sports.map(s => `<option value="${s.id}" ${u.assigned_sport_id === s.id ? 'selected' : ''}>${s.name}</option>`).join('');
         return `
         <tr class="border-b border-gray-50 hover:bg-gray-50">
