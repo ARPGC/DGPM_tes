@@ -70,6 +70,9 @@
             <button onclick="switchView('matches')" id="nav-matches" class="nav-item w-full flex items-center gap-3 px-6 py-3 text-sm font-bold text-gray-500">
                 <i data-lucide="calendar" class="w-5 h-5"></i> Schedule & Matches
             </button>
+            <button onclick="switchView('manual-schedule')" id="nav-manual-schedule" class="nav-item w-full flex items-center gap-3 px-6 py-3 text-sm font-bold text-gray-500">
+                <i data-lucide="edit-3" class="w-5 h-5"></i> Manual Schedule
+            </button>
         </nav>
 
         <div class="p-4 border-t border-gray-100">
@@ -115,6 +118,7 @@
                 <div class="flex flex-wrap gap-4">
                     <button onclick="switchView('sports')" class="px-6 py-3 bg-gray-100 rounded-xl text-sm font-bold hover:bg-gray-200 transition-colors">Manage Sports</button>
                     <button onclick="openAddSportModal()" class="px-6 py-3 bg-black text-white rounded-xl text-sm font-bold hover:bg-gray-800 transition-colors shadow-lg">+ Add New Sport</button>
+                    <button onclick="switchView('manual-schedule')" class="px-6 py-3 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-colors shadow-lg">Manual Schedule</button>
                 </div>
             </div>
         </div>
@@ -138,6 +142,80 @@
 
         <div id="view-matches" class="view-section hidden animate-fade-in">
             <div id="matches-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+        </div>
+
+        <div id="view-manual-schedule" class="view-section hidden animate-fade-in">
+            <div class="bg-white rounded-3xl shadow-xl border border-gray-200 overflow-hidden max-w-4xl mx-auto">
+                <div class="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                    <div>
+                        <h3 class="text-xl font-black text-gray-900">Manually Schedule Match</h3>
+                        <p class="text-xs text-gray-500 font-bold mt-1">Create a custom match entry bypassing the generator</p>
+                    </div>
+                    <div class="p-3 bg-indigo-100 rounded-full text-indigo-600">
+                        <i data-lucide="edit-3" class="w-6 h-6"></i>
+                    </div>
+                </div>
+                
+                <div class="p-8">
+                    <form onsubmit="submitManualSchedule(event)" class="space-y-6">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div>
+                                <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-2">Select Sport</label>
+                                <select id="manual-sport" required onchange="handleManualSportChange()" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-brand-primary focus:ring-2 focus:ring-indigo-100 transition-all">
+                                    <option value="">-- Choose Sport --</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-2">Match Type / Category</label>
+                                <input type="text" id="manual-type" placeholder="e.g. Regular (Junior Boys)" required class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-brand-primary focus:ring-2 focus:ring-indigo-100 transition-all">
+                            </div>
+                            <div>
+                                <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-2">Round Number</label>
+                                <input type="number" id="manual-round" value="1" required class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-brand-primary focus:ring-2 focus:ring-indigo-100 transition-all">
+                            </div>
+                        </div>
+
+                        <div class="bg-indigo-50/50 p-6 rounded-2xl border border-indigo-100 grid grid-cols-1 md:grid-cols-2 gap-8 relative">
+                            <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-full p-2 shadow-sm z-10 font-black text-gray-300 text-xs border border-gray-100">VS</div>
+                            <div>
+                                <label class="text-[10px] font-bold text-indigo-400 uppercase tracking-wide block mb-2">Team 1 (Home)</label>
+                                <select id="manual-team1" required class="w-full p-3 bg-white border border-indigo-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-200 transition-all">
+                                    <option value="">-- Select Sport First --</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-[10px] font-bold text-indigo-400 uppercase tracking-wide block mb-2">Team 2 (Away)</label>
+                                <select id="manual-team2" required class="w-full p-3 bg-white border border-indigo-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-200 transition-all">
+                                    <option value="">-- Select Sport First --</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-2">Date & Time</label>
+                                <input type="datetime-local" id="manual-time" required class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-brand-primary focus:ring-2 focus:ring-indigo-100 transition-all">
+                            </div>
+                            <div>
+                                <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-2">Location</label>
+                                <select id="manual-location" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-brand-primary focus:ring-2 focus:ring-indigo-100 transition-all">
+                                    <option value="College Ground">College Ground</option>
+                                    <option value="Badminton Hall">Badminton Hall</option>
+                                    <option value="Old Gymkhana">Old Gymkhana</option>
+                                    <option value="TBD">TBD</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="pt-4 flex justify-end gap-3">
+                            <button type="button" onclick="switchView('dashboard')" class="px-6 py-3 bg-gray-100 text-gray-500 font-bold rounded-xl hover:bg-gray-200 transition-colors">Cancel</button>
+                            <button type="submit" class="px-8 py-3 bg-black text-white font-bold rounded-xl shadow-lg hover:bg-gray-800 active:scale-95 transition-all flex items-center gap-2">
+                                <i data-lucide="save" class="w-4 h-4"></i> Publish Schedule
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
         </div>
 
     </main>
