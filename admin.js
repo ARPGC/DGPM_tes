@@ -182,6 +182,7 @@ window.exportCurrentPage = function(type) {
 // --- 7b. SQUADS EXPORT (PDF & EXCEL) ---
 
 async function fetchSquadsData() {
+    // FIX: Added .range(0, 9999) to get more than 1000 members
     const { data: members, error } = await adminClient
         .from('team_members')
         .select(`
@@ -193,7 +194,8 @@ async function fetchSquadsData() {
                 captain:users!captain_id(first_name, last_name, class_name, gender)
             )
         `)
-        .eq('status', 'Accepted');
+        .eq('status', 'Accepted')
+        .range(0, 9999);
 
     if(error || !members) {
         showToast("Error fetching squad data", "error");
@@ -340,11 +342,12 @@ window.loadMatches = async function() {
     if(!container) return;
     container.innerHTML = '<p class="col-span-3 text-center text-gray-400 py-10">Loading schedule...</p>';
 
-    // Fetch All Matches
+    // FIX: Added .range(0, 9999) to get all matches
     const { data: matches } = await adminClient
         .from('matches')
         .select('*, sports(name, is_performance, unit)')
-        .order('start_time', { ascending: true });
+        .order('start_time', { ascending: true })
+        .range(0, 9999);
 
     allMatchesCache = matches || [];
 
@@ -577,11 +580,11 @@ async function loadTeamsList() {
 
     // Note: Search/Filter UI is now in HTML, handled by filterTeamsList
     
-    // UPDATED QUERY: Fetch team_size from sports and all team members to count them
-    // ADDED: Fetch captain's class_name and gender
+    // UPDATED QUERY: Added .range(0, 9999)
     const { data: teams } = await adminClient.from('teams')
         .select('*, sports(name, team_size), captain:users!captain_id(first_name, last_name, class_name, gender), team_members(status)')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(0, 9999);
 
     allTeamsCache = teams || [];
 
@@ -790,9 +793,11 @@ async function loadRegistrationsList() {
     if(!tbody) return;
     tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center">Loading...</td></tr>';
 
+    // FIX: Added .range(0, 9999) to get more than 1000 registrations
     const { data: regs } = await adminClient.from('registrations')
         .select(`id, created_at, users (first_name, last_name, student_id, class_name, gender, mobile, email), sports (name)`)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(0, 9999);
 
     allRegistrationsCache = regs.map(r => ({
         name: `${r.users.first_name} ${r.users.last_name}`,
@@ -864,7 +869,11 @@ async function loadUsersList() {
     if(!tbody) return;
     tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center">Loading...</td></tr>';
     
-    const { data: users } = await adminClient.from('users').select('*').order('created_at', { ascending: false });
+    // FIX: Added .range(0, 9999) to get more than 1000 users
+    const { data: users } = await adminClient.from('users').select('*')
+        .order('created_at', { ascending: false })
+        .range(0, 9999);
+        
     const { data: sports } = await adminClient.from('sports').select('id, name');
     dataCache = users;
     
