@@ -237,8 +237,37 @@ async function fetchAllRegistrations(sportId) {
     return allRegs;
 }
 
+// Helper: Fetch all team members with pagination (>1000 rows)
+async function fetchAllTeamMembers(teamIds) {
+    let allMembers = [];
+    let from = 0;
+    const step = 1000;
+    let hasMore = true;
+
+    while (hasMore) {
+        const { data, error } = await supabaseClient
+            .from('team_members')
+            .select('team_id, users(gender)')
+            .in('team_id', teamIds)
+            .range(from, from + step - 1);
+
+        if (error) {
+            console.error("Error fetching members:", error);
+            return [];
+        }
+
+        if (data && data.length > 0) {
+            allMembers = allMembers.concat(data);
+            if (data.length < step) hasMore = false;
+            else from += step;
+        } else {
+            hasMore = false;
+        }
+    }
+    return allMembers;
+}
+
 async function initPerformanceEvent(sportId, sportName, category) {
-    // UPDATED: Use fetchAllRegistrations to bypass 1000 limit
     showToast("Fetching participants...", "info");
     const regs = await fetchAllRegistrations(sportId);
 
@@ -324,12 +353,8 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
                 const teamIds = ageFilteredTeams.map(t => t.team_id);
                 
                 if (teamIds.length > 0) {
-                    const { data: members, error: regError } = await supabaseClient
-                        .from('team_members')
-                        .select('team_id, users(gender)')
-                        .in('team_id', teamIds);
-
-                    if (regError) console.error("Gender Fetch Error:", regError);
+                    // UPDATED: Use Loop Fetch to bypass 1000 row limit
+                    const members = await fetchAllTeamMembers(teamIds);
 
                     const teamGenderMap = {};
                     if(members) {
