@@ -149,7 +149,7 @@
                 <div class="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
                     <div>
                         <h3 class="text-xl font-black text-gray-900">Manually Schedule Match</h3>
-                        <p class="text-xs text-gray-500 font-bold mt-1">Create a custom match entry bypassing the generator</p>
+                        <p class="text-xs text-gray-500 font-bold mt-1">Create a custom match or bye entry</p>
                     </div>
                     <div class="p-3 bg-indigo-100 rounded-full text-indigo-600">
                         <i data-lucide="edit-3" class="w-6 h-6"></i>
@@ -184,8 +184,14 @@
                                 </select>
                             </div>
                             <div>
-                                <label class="text-[10px] font-bold text-indigo-400 uppercase tracking-wide block mb-2">Team 2 (Away)</label>
-                                <select id="manual-team2" required class="w-full p-3 bg-white border border-indigo-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-200 transition-all">
+                                <div class="flex justify-between items-center mb-2">
+                                    <label class="text-[10px] font-bold text-indigo-400 uppercase tracking-wide block">Team 2 (Away)</label>
+                                    <div class="flex items-center gap-1">
+                                        <input type="checkbox" id="manual-is-bye" onchange="toggleManualBye()" class="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                        <label for="manual-is-bye" class="text-[10px] font-bold text-gray-500 cursor-pointer select-none">AUTO BYE</label>
+                                    </div>
+                                </div>
+                                <select id="manual-team2" required class="w-full p-3 bg-white border border-indigo-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-200 transition-all disabled:bg-gray-100 disabled:text-gray-400">
                                     <option value="">-- Select Sport First --</option>
                                 </select>
                             </div>
