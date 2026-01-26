@@ -207,7 +207,8 @@ window.handleScheduleClick = async function(sportId, sportName, isPerformance, s
     }
 }
 
-// Helper: Fetch all registrations with pagination (>1000 rows)
+// --- NEW HELPER FUNCTIONS FOR BULK FETCHING ---
+
 async function fetchAllRegistrations(sportId) {
     let allRegs = [];
     let from = 0;
@@ -237,7 +238,6 @@ async function fetchAllRegistrations(sportId) {
     return allRegs;
 }
 
-// Helper: Fetch all team members with pagination (>1000 rows)
 async function fetchAllTeamMembers(teamIds) {
     let allMembers = [];
     let from = 0;
@@ -267,8 +267,12 @@ async function fetchAllTeamMembers(teamIds) {
     return allMembers;
 }
 
+// --- END NEW HELPER FUNCTIONS ---
+
 async function initPerformanceEvent(sportId, sportName, category) {
-    showToast("Fetching participants...", "info");
+    showToast("Fetching participants... please wait", "info");
+    
+    // UPDATED: Use fetchAllRegistrations instead of standard select
     const regs = await fetchAllRegistrations(sportId);
 
     if (!regs || regs.length === 0) return showToast("No registrations found.", "error");
@@ -344,28 +348,35 @@ async function initTournamentRound(sportId, sportName, sportType, category) {
                 candidates = allTeams.map(t => ({ id: t.team_id, name: t.team_name }));
             } else {
                 // IMPORTANT: Filter by Age (Junior/Senior) AND Gender (Male/Female)
+                
+                // 1. Determine requirements
                 const requiredAge = category.toLowerCase().includes('junior') ? 'junior' : 'senior';
                 const requiredGender = category.toLowerCase().includes('boys') ? 'male' : 'female';
 
-                // Filter teams by Age first
+                // 2. Filter teams by Age first
                 const ageFilteredTeams = allTeams.filter(t => (t.category || '').toLowerCase().trim() === requiredAge);
                 
+                // 3. Fetch genders for these teams
                 const teamIds = ageFilteredTeams.map(t => t.team_id);
                 
                 if (teamIds.length > 0) {
-                    // UPDATED: Use Loop Fetch to bypass 1000 row limit
+                    // UPDATED: Use fetchAllTeamMembers loop instead of direct select
                     const members = await fetchAllTeamMembers(teamIds);
 
+                    // Map TeamID -> Gender (Male/Female)
                     const teamGenderMap = {};
                     if(members) {
                         members.forEach(m => {
                             if(!m.users) return;
                             const g = (m.users.gender || '').toLowerCase();
+                            // Standardize gender string
                             const stdG = (g === 'male' || g === 'boy' || g === 'm') ? 'male' : 'female';
+                            // Store first member's gender as team gender
                             if (!teamGenderMap[m.team_id]) teamGenderMap[m.team_id] = stdG;
                         });
                     }
 
+                    // 4. Final Filter: Keep only matching gender
                     candidates = ageFilteredTeams.filter(t => {
                         const detectedGender = teamGenderMap[t.team_id];
                         return detectedGender === requiredGender;
@@ -513,14 +524,14 @@ async function confirmForceWinner(sportId, sportName, isESport) {
     window.loadSportsList();
 }
 
-// --- 11. MATCH LIST (UPDATED WITH PAGINATION) ---
+// --- 11. MATCH LIST ---
 window.loadMatches = async function(statusFilter) {
     currentMatchViewFilter = statusFilter;
     const container = document.getElementById('matches-grid');
     if(!container) return;
     container.innerHTML = '<p class="col-span-3 text-center py-10">Loading...</p>';
 
-    // Loop to fetch all matches > 1000
+    // Loop to fetch ALL matches, breaking the 1000 limit
     let allMatches = [];
     let from = 0;
     const step = 1000;
@@ -535,7 +546,7 @@ window.loadMatches = async function(statusFilter) {
             .range(from, from + step - 1);
 
         if (error) {
-            console.error(error);
+            console.error("Fetch Matches Error:", error);
             break;
         }
 
