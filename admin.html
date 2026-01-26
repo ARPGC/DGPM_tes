@@ -103,6 +103,13 @@
                 
                 <div class="w-px bg-gray-300 mx-1 h-8 self-center"></div>
 
+                <button id="btn-match-excel" onclick="downloadMatchesExcel()" class="hidden flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-all active:scale-95">
+                    <i data-lucide="table" class="w-4 h-4"></i> Matches Excel
+                </button>
+                <button id="btn-match-pdf" onclick="downloadMatchesPDF()" class="hidden flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-blue-200 hover:bg-blue-700 transition-all active:scale-95">
+                    <i data-lucide="file-output" class="w-4 h-4"></i> Matches PDF
+                </button>
+
                 <button id="btn-squad-excel" onclick="downloadSquadsExcel()" class="hidden flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-all active:scale-95">
                     <i data-lucide="table" class="w-4 h-4"></i> Squads Excel
                 </button>
@@ -188,6 +195,50 @@
         </div>
 
         <div id="view-matches" class="view-section hidden animate-fade-in">
+            <div class="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+                <div class="p-4 border-b border-gray-100 flex flex-wrap gap-4 items-center bg-gray-50/50">
+                    <div class="flex-1 min-w-[200px]">
+                        <div class="relative">
+                            <i data-lucide="search" class="absolute left-3 top-3 w-4 h-4 text-gray-400"></i>
+                            <input type="text" id="match-search-input" onkeyup="filterMatches()" placeholder="Search Teams or Location..." class="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-brand-primary/20 transition-all">
+                        </div>
+                    </div>
+
+                    <select id="filter-match-sport" onchange="filterMatches()" class="bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none cursor-pointer hover:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 transition-all">
+                        <option value="">All Sports</option>
+                    </select>
+
+                    <select id="filter-match-gender" onchange="filterMatches()" class="bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none cursor-pointer hover:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 transition-all">
+                        <option value="">All Genders</option>
+                        <option value="Male">Male / Boys</option>
+                        <option value="Female">Female / Girls</option>
+                    </select>
+
+                    <select id="filter-match-class" onchange="filterMatches()" class="bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none cursor-pointer hover:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 transition-all">
+                        <option value="">All Categories</option>
+                        <option value="Junior">Junior (FY/SY JC)</option>
+                        <option value="Senior">Degree (Senior)</option>
+                    </select>
+
+                    <select id="filter-match-status" onchange="filterMatches()" class="bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none cursor-pointer hover:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 transition-all">
+                        <option value="">All Statuses</option>
+                        <option value="Scheduled">Scheduled</option>
+                        <option value="Live">Live</option>
+                        <option value="Completed">Completed</option>
+                    </select>
+
+                    <select id="sort-match-order" onchange="filterMatches()" class="bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none cursor-pointer hover:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 transition-all">
+                        <option value="time_asc">Time (Ascending)</option>
+                        <option value="time_desc">Time (Descending)</option>
+                        <option value="sport">Sport Name</option>
+                    </select>
+                    
+                    <button onclick="resetMatchFilters()" class="p-2.5 bg-gray-200 text-gray-600 rounded-xl hover:bg-gray-300 transition-colors" title="Reset Filters">
+                        <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+
             <div id="matches-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
         </div>
 
