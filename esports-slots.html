@@ -28,6 +28,12 @@
                     },
                     animation: {
                         'fade-in': 'fadeIn 0.3s ease-out'
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0', transform: 'translateY(10px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' }
+                        }
                     }
                 }
             }
@@ -36,6 +42,7 @@
     
     <style>
         body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        /* Hide Scrollbar */
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
@@ -80,9 +87,17 @@
     </main>
 
     <script>
-        if (typeof CONFIG === 'undefined') console.error("Config missing. Ensure config.js is loaded.");
-        const supabase = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
-        let allSlots = [];
+        // --- LOGIC ---
+        
+        // 1. Initialize Supabase
+        if (typeof CONFIG === 'undefined') {
+            console.error("Config missing. Ensure config.js is loaded.");
+        }
+        
+        // FIXED: Renamed variable to 'supabaseClient' to avoid conflict with the library 'supabase'
+        const supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
+        
+        let allSlots = []; 
 
         document.addEventListener('DOMContentLoaded', async () => {
             if(window.lucide) lucide.createIcons();
@@ -96,12 +111,12 @@
         }
 
         async function fetchSlots() {
-            // FIXED: Fetching columns exactly as named in the SQL/CSV
-            const { data, error } = await supabase
+            // Using 'supabaseClient' instead of 'supabase'
+            const { data, error } = await supabaseClient
                 .from('esports_slots')
                 .select('*')
-                .order('Slot', { ascending: true }) // Group Order
-                .order('Team_Name', { ascending: true }); // Alphabetical order within group
+                .order('Slot', { ascending: true }) 
+                .order('Team_Name', { ascending: true });
 
             if (error) {
                 console.error('Supabase Error:', error);
@@ -150,7 +165,6 @@
 
             totalCountEl.innerText = `${slots.length} Teams`;
 
-            // Group by 'Slot' column which acts as the Group ID
             const grouped = slots.reduce((acc, curr) => {
                 const g = curr.Slot || 'Unassigned';
                 if (!acc[g]) acc[g] = [];
@@ -161,7 +175,6 @@
             container.innerHTML = Object.keys(grouped).map(groupNum => {
                 const groupSlots = grouped[groupNum];
                 
-                // Map the rows
                 const rows = groupSlots.map((s, index) => {
                     const statusColor = s.Status === 'Locked' ? 'text-red-500' : 'text-green-500';
                     return `
