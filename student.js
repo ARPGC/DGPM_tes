@@ -447,8 +447,9 @@
             const isCricket = m.sports?.name?.toLowerCase().includes('cricket');
             
             const dateObj = new Date(m.start_time);
-            const timeStr = dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-            const dateStr = dateObj.toLocaleDateString([], {month: 'short', day: 'numeric'});
+            // MODIFIED: Added timeZone: 'UTC' to prevent adding 5:30 (IST) offset
+            const timeStr = dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', timeZone: 'UTC'});
+            const dateStr = dateObj.toLocaleDateString([], {month: 'short', day: 'numeric', timeZone: 'UTC'});
 
             let badgeHtml = isLive 
                 ? `<span class="bg-red-50 dark:bg-red-900/40 text-red-600 dark:text-red-400 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider animate-pulse flex items-center gap-1"><span class="w-1.5 h-1.5 bg-red-500 rounded-full"></span> LIVE</span>`
