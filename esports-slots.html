@@ -28,12 +28,6 @@
                     },
                     animation: {
                         'fade-in': 'fadeIn 0.3s ease-out'
-                    },
-                    keyframes: {
-                        fadeIn: {
-                            '0%': { opacity: '0', transform: 'translateY(10px)' },
-                            '100%': { opacity: '1', transform: 'translateY(0)' }
-                        }
                     }
                 }
             }
@@ -42,7 +36,6 @@
     
     <style>
         body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
-        /* Hide Scrollbar */
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
@@ -78,7 +71,7 @@
         </div>
 
         <div id="slots-container" class="space-y-6 animate-fade-in pb-10">
-            <div class="text-center py-10">
+             <div class="text-center py-10">
                 <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary mx-auto"></div>
                 <p class="text-xs text-gray-400 mt-2">Loading tournament data...</p>
             </div>
@@ -87,15 +80,9 @@
     </main>
 
     <script>
-        // --- LOGIC ---
-        
-        // 1. Initialize Supabase
-        if (typeof CONFIG === 'undefined') {
-            console.error("Config missing. Ensure config.js is loaded.");
-        }
+        if (typeof CONFIG === 'undefined') console.error("Config missing. Ensure config.js is loaded.");
         const supabase = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
-        
-        let allSlots = []; // Store fetched data locally for fast filtering
+        let allSlots = [];
 
         document.addEventListener('DOMContentLoaded', async () => {
             if(window.lucide) lucide.createIcons();
@@ -103,20 +90,18 @@
             await fetchSlots();
         });
 
-        // 2. Theme Handling (Matches Student Portal)
         function initTheme() {
             const savedTheme = localStorage.getItem('urja-theme');
             if (savedTheme === 'dark') document.documentElement.classList.add('dark');
         }
 
-        // 3. Fetch Data from Supabase
         async function fetchSlots() {
-            // Fetching from 'esports_slots' table
+            // FIXED: Fetching columns exactly as named in the SQL/CSV
             const { data, error } = await supabase
                 .from('esports_slots')
                 .select('*')
-                .order('group_name', { ascending: true })
-                .order('slot_number', { ascending: true });
+                .order('Slot', { ascending: true }) // Group Order
+                .order('Team_Name', { ascending: true }); // Alphabetical order within group
 
             if (error) {
                 console.error('Supabase Error:', error);
@@ -124,7 +109,7 @@
                     <div class="text-center py-10">
                         <i data-lucide="alert-triangle" class="w-8 h-8 text-red-400 mx-auto mb-2"></i>
                         <p class="text-red-400 text-sm font-bold">Failed to load slots.</p>
-                        <p class="text-gray-400 text-xs mt-1">Please check your internet connection.</p>
+                        <p class="text-gray-400 text-xs mt-1">${error.message}</p>
                     </div>`;
                 lucide.createIcons();
                 return;
@@ -135,24 +120,19 @@
             renderSlots(allSlots);
         }
 
-        // 4. Populate the Group Dropdown dynamically
         function populateGroupFilter() {
-            // Extract unique group names
-            const groups = [...new Set(allSlots.map(s => s.group_name))].sort();
+            const groups = [...new Set(allSlots.map(s => s.Slot))].sort((a,b) => a - b);
             const select = document.getElementById('group-filter');
-            
-            // Clear existing options except 'All Groups'
             select.innerHTML = '<option value="all">All Groups</option>';
             
             groups.forEach(g => {
                 const opt = document.createElement('option');
                 opt.value = g;
-                opt.innerText = g;
+                opt.innerText = `Group ${g}`;
                 select.appendChild(opt);
             });
         }
 
-        // 5. Render the List
         function renderSlots(slots) {
             const container = document.getElementById('slots-container');
             const totalCountEl = document.getElementById('total-count');
@@ -170,63 +150,61 @@
 
             totalCountEl.innerText = `${slots.length} Teams`;
 
-            // Group data by 'group_name'
+            // Group by 'Slot' column which acts as the Group ID
             const grouped = slots.reduce((acc, curr) => {
-                const g = curr.group_name || 'Unassigned';
+                const g = curr.Slot || 'Unassigned';
                 if (!acc[g]) acc[g] = [];
                 acc[g].push(curr);
                 return acc;
             }, {});
 
-            // Generate HTML
-            container.innerHTML = Object.keys(grouped).map(groupName => {
-                const groupSlots = grouped[groupName];
+            container.innerHTML = Object.keys(grouped).map(groupNum => {
+                const groupSlots = grouped[groupNum];
                 
-                const rows = groupSlots.map(s => `
+                // Map the rows
+                const rows = groupSlots.map((s, index) => {
+                    const statusColor = s.Status === 'Locked' ? 'text-red-500' : 'text-green-500';
+                    return `
                     <div class="flex items-center p-3 border-b border-gray-100 dark:border-gray-700/50 last:border-0 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                         <div class="w-10 h-10 rounded-xl bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-600 dark:text-gray-300 font-black text-lg shrink-0 mr-3 shadow-inner">
-                            ${s.slot_number}
+                            ${index + 1}
                         </div>
                         <div class="flex-1 min-w-0">
-                            <h4 class="font-bold text-sm text-gray-900 dark:text-white truncate">${s.team_name}</h4>
+                            <h4 class="font-bold text-sm text-gray-900 dark:text-white truncate">${s.Team_Name}</h4>
                             <p class="text-[10px] text-gray-500 dark:text-gray-400 truncate font-medium">
-                                ${s.captain_name ? `<span class="text-brand-primary dark:text-indigo-400">Capt:</span> ${s.captain_name}` : 'TBA'}
+                                ${s.Captain ? `<span class="text-brand-primary dark:text-indigo-400">Capt:</span> ${s.Captain}` : 'TBA'}
                             </p>
                         </div>
-                        ${s.logo_url ? `<img src="${s.logo_url}" class="w-8 h-8 rounded-full object-cover border border-gray-200 dark:border-gray-600 bg-white">` : ''}
+                        <div class="text-[9px] font-bold ${statusColor} bg-gray-50 dark:bg-gray-900 px-2 py-1 rounded border border-gray-100 dark:border-gray-700">
+                            ${s.Status || 'Open'}
+                        </div>
                     </div>
-                `).join('');
+                `}).join('');
 
                 return `
                 <div class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden mb-4">
                     <div class="bg-gray-50 dark:bg-gray-700/50 px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
                         <h3 class="font-black text-brand-primary dark:text-indigo-400 uppercase tracking-widest text-xs flex items-center gap-2">
-                            <i data-lucide="layers" class="w-3 h-3"></i> ${groupName}
+                            <i data-lucide="layers" class="w-3 h-3"></i> Group ${groupNum}
                         </h3>
-                        <span class="text-[10px] font-bold text-gray-400 bg-white dark:bg-gray-800 px-2 py-0.5 rounded-full border border-gray-200 dark:border-gray-600 shadow-sm">${groupSlots.length} Slots</span>
+                        <span class="text-[10px] font-bold text-gray-400 bg-white dark:bg-gray-800 px-2 py-0.5 rounded-full border border-gray-200 dark:border-gray-600 shadow-sm">${groupSlots.length} Teams</span>
                     </div>
                     <div>${rows}</div>
                 </div>`;
             }).join('');
             
-            // Re-initialize icons for new content
             if(window.lucide) lucide.createIcons();
         }
 
-        // 6. Filter Logic (Search & Dropdown)
         window.filterSlots = function() {
             const searchVal = document.getElementById('search-input').value.toLowerCase().trim();
             const groupVal = document.getElementById('group-filter').value;
 
             const filtered = allSlots.filter(s => {
-                // Search logic: Checks Team Name OR Captain Name
-                const teamMatch = s.team_name && s.team_name.toLowerCase().includes(searchVal);
-                const captainMatch = s.captain_name && s.captain_name.toLowerCase().includes(searchVal);
-                
+                const teamMatch = s.Team_Name && s.Team_Name.toLowerCase().includes(searchVal);
+                const captainMatch = s.Captain && s.Captain.toLowerCase().includes(searchVal);
                 const matchesSearch = !searchVal || teamMatch || captainMatch;
-                
-                // Group logic: Checks specific group OR 'all'
-                const matchesGroup = groupVal === 'all' || s.group_name === groupVal;
+                const matchesGroup = groupVal === 'all' || String(s.Slot) === groupVal;
                 
                 return matchesSearch && matchesGroup;
             });
