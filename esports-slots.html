@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Esports Slots | URJA 3.0</title>
+    
+    <link rel="icon" type="image/png" href="https://i.ibb.co/zWLqKLg4/Untitled-1.png">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <script src="config.js"></script>
+    <script src="config2.js"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            primary: '#4F46E5', // Indigo 600
+                            bg: '#F9FAFB', // Gray 50
+                            dark: '#111827' // Gray 900
+                        }
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.3s ease-out'
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0', transform: 'translateY(10px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' }
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-brand-bg dark:bg-gray-900 text-gray-800 dark:text-gray-100 min-h-screen transition-colors duration-300">
+
+    <header class="fixed top-0 w-full bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 z-30 px-4 py-3 flex items-center gap-3 shadow-sm backdrop-blur-md bg-opacity-90 dark:bg-opacity-90">
+        <button onclick="window.history.back()" class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+            <i data-lucide="arrow-left" class="w-5 h-5 text-gray-600 dark:text-gray-300"></i>
+        </button>
+        <h1 class="text-lg font-black text-gray-900 dark:text-white">Esports Slots</h1>
+    </header>
+
+    <main class="pt-20 px-4 max-w-lg mx-auto w-full pb-10">
+        
+        <div class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 mb-6 animate-fade-in">
+            <div class="flex gap-2 mb-3">
+                <div class="relative flex-1">
+                    <i data-lucide="search" class="absolute left-3 top-2.5 w-4 h-4 text-gray-400"></i>
+                    <input type="text" id="search-input" onkeyup="filterSlots()" placeholder="Search team..." class="w-full pl-9 pr-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-primary/50 transition-all dark:text-white">
+                </div>
+                <select id="group-filter" onchange="filterSlots()" class="w-28 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-xs rounded-xl p-2 outline-none focus:ring-2 focus:ring-brand-primary/50 font-bold">
+                    <option value="all">All Groups</option>
+                </select>
+            </div>
+            <div class="flex justify-between items-center text-[10px] text-gray-400 font-medium px-1">
+                <span>Updated Live</span>
+                <span id="total-count">0 Teams</span>
+            </div>
+        </div>
+
+        <div id="slots-container" class="space-y-6 animate-fade-in">
+            <div class="text-center py-10">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary mx-auto"></div>
+                <p class="text-xs text-gray-400 mt-2">Loading slots...</p>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        // --- LOGIC ---
+        let allSlots = [];
+        const supabase = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            if(window.lucide) lucide.createIcons();
+            initTheme();
+            await fetchSlots();
+        });
+
+        // Theme Handling (Matches Student Portal)
+        function initTheme() {
+            const savedTheme = localStorage.getItem('urja-theme');
+            if (savedTheme === 'dark') document.documentElement.classList.add('dark');
+        }
+
+        async function fetchSlots() {
+            const { data, error } = await supabase
+                .from('esports_slots')
+                .select('*')
+                .order('group_name', { ascending: true })
+                .order('slot_number', { ascending: true });
+
+            if (error) {
+                console.error('Error:', error);
+                document.getElementById('slots-container').innerHTML = `<p class="text-center text-red-400 text-sm">Failed to load data.</p>`;
+                return;
+            }
+
+            allSlots = data || [];
+            populateGroupFilter();
+            renderSlots(allSlots);
+        }
+
+        function populateGroupFilter() {
+            const groups = [...new Set(allSlots.map(s => s.group_name))].sort();
+            const select = document.getElementById('group-filter');
+            groups.forEach(g => {
+                const opt = document.createElement('option');
+                opt.value = g;
+                opt.innerText = g;
+                select.appendChild(opt);
+            });
+        }
+
+        function renderSlots(slots) {
+            const container = document.getElementById('slots-container');
+            const totalCountEl = document.getElementById('total-count');
+            
+            if (!slots || slots.length === 0) {
+                container.innerHTML = `<div class="text-center py-10 text-gray-400 text-sm">No slots found.</div>`;
+                totalCountEl.innerText = "0 Teams";
+                return;
+            }
+
+            totalCountEl.innerText = `${slots.length} Teams`;
+
+            // Group data by 'group_name'
+            const grouped = slots.reduce((acc, curr) => {
+                if (!acc[curr.group_name]) acc[curr.group_name] = [];
+                acc[curr.group_name].push(curr);
+                return acc;
+            }, {});
+
+            container.innerHTML = Object.keys(grouped).map(groupName => {
+                const groupSlots = grouped[groupName];
+                
+                const rows = groupSlots.map(s => `
+                    <div class="flex items-center p-3 border-b border-gray-100 dark:border-gray-700/50 last:border-0 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                        <div class="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-300 font-black text-lg shrink-0 mr-3">
+                            ${s.slot_number}
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h4 class="font-bold text-sm text-gray-900 dark:text-white truncate">${s.team_name}</h4>
+                            <p class="text-[10px] text-gray-500 dark:text-gray-400 truncate">${s.captain_name ? 'Capt: ' + s.captain_name : 'No Captain Info'}</p>
+                        </div>
+                        ${s.logo_url ? `<img src="${s.logo_url}" class="w-8 h-8 rounded-full object-cover border border-gray-200 dark:border-gray-600">` : ''}
+                    </div>
+                `).join('');
+
+                return `
+                <div class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+                    <div class="bg-gray-50 dark:bg-gray-700/50 px-4 py-2 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
+                        <h3 class="font-black text-brand-primary dark:text-indigo-400 uppercase tracking-widest text-xs">${groupName}</h3>
+                        <span class="text-[10px] font-bold text-gray-400 bg-white dark:bg-gray-800 px-2 py-0.5 rounded-full border border-gray-200 dark:border-gray-600">${groupSlots.length} Teams</span>
+                    </div>
+                    <div>${rows}</div>
+                </div>`;
+            }).join('');
+        }
+
+        window.filterSlots = function() {
+            const searchVal = document.getElementById('search-input').value.toLowerCase();
+            const groupVal = document.getElementById('group-filter').value;
+
+            const filtered = allSlots.filter(s => {
+                const matchesSearch = s.team_name.toLowerCase().includes(searchVal) || 
+                                      (s.captain_name && s.captain_name.toLowerCase().includes(searchVal));
+                const matchesGroup = groupVal === 'all' || s.group_name === groupVal;
+                
+                return matchesSearch && matchesGroup;
+            });
+
+            renderSlots(filtered);
+        }
+    </script>
+</body>
+</html>
