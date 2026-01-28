@@ -223,7 +223,7 @@ window.loadManualScheduleView = async function() {
     }
 }
 
-// UPDATE: Handle Sport Change in Manual View
+// UPDATE: Handle Sport Change in Manual View (FIXED FOR INDIVIDUAL SPORTS)
 window.handleManualSportChange = async function() {
     const sportId = document.getElementById('manual-sport').value;
     const t1Select = document.getElementById('manual-team1');
@@ -241,61 +241,41 @@ window.handleManualSportChange = async function() {
         return;
     }
 
-    // 1. Check Sport Type (Individual or Team)
+    // 1. Check Sport Type
     const { data: sport } = await supabaseClient.from('sports').select('type').eq('id', sportId).single();
-    const isIndividual = sport?.type === 'Individual';
 
-    let dropdownOptions = [];
-
-    if (isIndividual) {
-        // --- FETCH FROM REGISTRATIONS ---
-        const regs = await fetchAllRegistrations(sportId);
-        
-        if (regs && regs.length > 0) {
-            // Sort by Name
-            regs.sort((a, b) => {
-                const nameA = (a.users?.first_name || '').toLowerCase();
-                const nameB = (b.users?.first_name || '').toLowerCase();
-                return nameA.localeCompare(nameB);
-            });
-
-            dropdownOptions = regs.map(r => ({
-                id: r.user_id, // Use User ID for individuals
-                name: `${r.users.first_name} ${r.users.last_name} (${r.users.student_id})`
-            }));
-        }
-    } else {
-        // --- FETCH FROM TEAMS ---
-        let allTeams = [];
-        let from = 0;
-        const step = 1000;
-        let hasMore = true;
-
-        while (hasMore) {
-            const { data, error } = await supabaseClient
-                .from('teams')
-                .select('id, name')
-                .eq('sport_id', sportId)
-                .order('name')
-                .range(from, from + step - 1);
-            
-            if (data && data.length > 0) {
-                allTeams = allTeams.concat(data);
-                if (data.length < step) hasMore = false; else from += step;
-            } else {
-                hasMore = false;
-            }
-        }
-        
-        dropdownOptions = allTeams.map(t => ({
-            id: t.id,
-            name: t.name
-        }));
+    // 2. If Individual, we MUST ensure the registrations are converted to 'Teams' table entries first
+    // This is required because 'matches' table expects team_id (foreign key), not user_id.
+    if (sport?.type === 'Individual') {
+        showToast("Syncing individual list...", "info");
+        await supabaseClient.rpc('prepare_individual_teams', { sport_id_input: parseInt(sportId) });
     }
 
-    // Generate HTML
+    // 3. FETCH FROM TEAMS TABLE (Unified Logic for both Team & Individual)
+    // Individual "teams" will now exist thanks to the RPC call above.
+    let allTeams = [];
+    let from = 0;
+    const step = 1000;
+    let hasMore = true;
+
+    while (hasMore) {
+        const { data, error } = await supabaseClient
+            .from('teams')
+            .select('id, name')
+            .eq('sport_id', sportId)
+            .order('name')
+            .range(from, from + step - 1);
+        
+        if (data && data.length > 0) {
+            allTeams = allTeams.concat(data);
+            if (data.length < step) hasMore = false; else from += step;
+        } else {
+            hasMore = false;
+        }
+    }
+
     const opts = '<option value="">-- Select Participant --</option>' + 
-                 dropdownOptions.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+                 allTeams.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
     
     t1Select.innerHTML = opts;
     if(!isBye) t2Select.innerHTML = opts;
