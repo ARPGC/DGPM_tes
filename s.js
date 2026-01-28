@@ -133,12 +133,9 @@ window.loadSportsList = async function() {
     if(tableTourn) tableTourn.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-gray-400">Loading...</td></tr>';
 
     const { data: sports } = await supabaseClient.from('sports').select('*').order('name');
-    const { data: activeMatches } = await supabaseClient.from('matches').select('id, sport_id, match_type, status').neq('status', 'Completed');
+    const { data: activeMatches } = await supabaseClient.from('matches').select('sport_id, match_type, status').neq('status', 'Completed');
 
-    // MODIFIED: Returns the actual match object if active, else undefined
-    const getActiveMatch = (id, cat) => activeMatches?.find(m => m.sport_id === id && m.match_type?.includes(cat));
-    // Kept for backward compatibility if needed elsewhere
-    const isActive = (id, cat) => !!getActiveMatch(id, cat);
+    const isActive = (id, cat) => activeMatches?.some(m => m.sport_id === id && m.match_type?.includes(cat));
 
     if(!sports || sports.length === 0) return;
 
@@ -150,47 +147,34 @@ window.loadSportsList = async function() {
         const isESport = s.name.toLowerCase().includes('bgmi') || s.name.toLowerCase().includes('free fire') || s.name.toLowerCase().includes('valorant');
 
         const generateBtn = (catLabel, catKey) => {
-            const activeMatch = getActiveMatch(s.id, catKey);
-            
-            if(activeMatch) {
-                // MODIFIED: Added button to add student if live
-                return `
-                <div class="flex flex-col items-center gap-1 bg-green-50 rounded p-1">
-                    <span class="text-[9px] font-bold text-green-600 whitespace-nowrap">${catLabel} Live</span>
-                    <button onclick="window.openLiveAddModal('${activeMatch.id}')" 
-                        class="px-2 py-1 bg-white text-indigo-600 border border-indigo-100 rounded text-[9px] font-bold hover:bg-indigo-50 flex items-center gap-1 shadow-sm w-full justify-center">
-                        <i data-lucide="user-plus" class="w-3 h-3"></i> Add
-                    </button>
-                </div>`;
+            if(isActive(s.id, catKey)) {
+                return `<span class="text-[9px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded whitespace-nowrap">${catLabel} Live</span>`;
             } else {
                 const btnColor = catLabel.includes('Boys') ? 'bg-blue-600' : 'bg-pink-600';
                 return `<button onclick="window.handleScheduleClick('${s.id}', '${s.name}', ${s.is_performance}, '${s.type}', '${catKey}')" 
-                        class="px-2 py-1.5 ${btnColor} text-white rounded text-[9px] font-bold shadow-sm hover:opacity-90 whitespace-nowrap h-fit self-center">
+                        class="px-2 py-1.5 ${btnColor} text-white rounded text-[9px] font-bold shadow-sm hover:opacity-90 whitespace-nowrap">
                         Start ${catLabel}
                         </button>`;
             }
         };
 
         if (isESport) {
-            const activeM = getActiveMatch(s.id, 'Global');
+            const globalActive = isActive(s.id, 'Global');
             actionBtn = `
                 <div class="flex items-center gap-2 justify-end">
-                    ${activeM 
-                        ? `<div class="flex items-center gap-2">
-                             <span class="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded">Active</span>
-                             <button onclick="window.openLiveAddModal('${activeM.id}')" class="px-2 py-1 bg-indigo-50 text-indigo-600 border border-indigo-200 rounded text-[10px] font-bold hover:bg-indigo-100 flex items-center gap-1"><i data-lucide="user-plus" class="w-3 h-3"></i> Add</button>
-                           </div>` 
+                    ${globalActive 
+                        ? '<span class="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded">Active</span>' 
                         : `<button onclick="window.handleScheduleClick('${s.id}', '${s.name}', false, '${s.type}', 'Global')" class="px-3 py-1.5 bg-indigo-600 text-white rounded text-[10px] font-bold shadow-sm">Start Event</button>`}
                     <button onclick="window.openForceWinnerModal('${s.id}', '${s.name}', true)" class="p-1.5 bg-yellow-50 text-yellow-600 rounded border border-yellow-200" title="Declare Winner"><i data-lucide="crown" class="w-3.5 h-3.5"></i></button>
                 </div>`;
         } else {
             actionBtn = `
-                <div class="flex flex-col gap-2 items-end">
-                    <div class="flex gap-2">
+                <div class="flex flex-col gap-1 items-end">
+                    <div class="flex gap-1">
                         ${generateBtn('Jr Boys', 'Junior Boys')}
                         ${generateBtn('Jr Girls', 'Junior Girls')}
                     </div>
-                    <div class="flex gap-2">
+                    <div class="flex gap-1">
                         ${generateBtn('Sr Boys', 'Senior Boys')}
                         ${generateBtn('Sr Girls', 'Senior Girls')}
                     </div>
@@ -218,58 +202,6 @@ window.loadSportsList = async function() {
     lucide.createIcons();
 }
 
-// NEW: Add Live Participant Handlers
-window.openLiveAddModal = function(matchId) {
-    document.getElementById('live-add-match-id').value = matchId;
-    document.getElementById('live-add-name').value = '';
-    document.getElementById('live-add-id').value = '';
-    document.getElementById('modal-add-live-participant').classList.remove('hidden');
-}
-
-window.submitLiveParticipant = async function(e) {
-    e.preventDefault();
-    const matchId = document.getElementById('live-add-match-id').value;
-    const name = document.getElementById('live-add-name').value;
-    const sid = document.getElementById('live-add-id').value;
-
-    if(!name || !sid) return showToast("Please fill all fields", "error");
-
-    // Fetch current match data
-    const { data: match, error: fetchErr } = await supabaseClient
-        .from('matches')
-        .select('performance_data')
-        .eq('id', matchId)
-        .single();
-    
-    if(fetchErr || !match) return showToast("Error finding match", "error");
-
-    let pData = match.performance_data || [];
-    
-    // Create new entry
-    const newEntry = {
-        id: 'manual_' + Date.now(), // Generate temp ID
-        name: `${name} (${sid})`,
-        result: '',
-        rank: 0
-    };
-
-    pData.push(newEntry);
-
-    // Update DB
-    const { error: updateErr } = await supabaseClient
-        .from('matches')
-        .update({ performance_data: pData })
-        .eq('id', matchId);
-
-    if(updateErr) {
-        showToast("Failed to add user: " + updateErr.message, "error");
-    } else {
-        showToast("User Added Successfully!", "success");
-        window.closeModal('modal-add-live-participant');
-        syncToRealtime(matchId); // Push update to live scoreboards
-    }
-}
-
 // --- 9. SCHEDULER & MANUAL SCHEDULE ---
 
 // NEW: Load Manual Schedule View
@@ -291,7 +223,7 @@ window.loadManualScheduleView = async function() {
     }
 }
 
-// NEW: Handle Sport Change in Manual View
+// UPDATE: Handle Sport Change in Manual View
 window.handleManualSportChange = async function() {
     const sportId = document.getElementById('manual-sport').value;
     const t1Select = document.getElementById('manual-team1');
@@ -309,30 +241,61 @@ window.handleManualSportChange = async function() {
         return;
     }
 
-    // Fetch Teams for Sport (using Pagination if needed)
-    let allTeams = [];
-    let from = 0;
-    const step = 1000;
-    let hasMore = true;
+    // 1. Check Sport Type (Individual or Team)
+    const { data: sport } = await supabaseClient.from('sports').select('type').eq('id', sportId).single();
+    const isIndividual = sport?.type === 'Individual';
 
-    while (hasMore) {
-        const { data, error } = await supabaseClient
-            .from('teams')
-            .select('id, name')
-            .eq('sport_id', sportId)
-            .order('name')
-            .range(from, from + step - 1);
+    let dropdownOptions = [];
+
+    if (isIndividual) {
+        // --- FETCH FROM REGISTRATIONS ---
+        const regs = await fetchAllRegistrations(sportId);
         
-        if (data && data.length > 0) {
-            allTeams = allTeams.concat(data);
-            if (data.length < step) hasMore = false; else from += step;
-        } else {
-            hasMore = false;
+        if (regs && regs.length > 0) {
+            // Sort by Name
+            regs.sort((a, b) => {
+                const nameA = (a.users?.first_name || '').toLowerCase();
+                const nameB = (b.users?.first_name || '').toLowerCase();
+                return nameA.localeCompare(nameB);
+            });
+
+            dropdownOptions = regs.map(r => ({
+                id: r.user_id, // Use User ID for individuals
+                name: `${r.users.first_name} ${r.users.last_name} (${r.users.student_id})`
+            }));
         }
+    } else {
+        // --- FETCH FROM TEAMS ---
+        let allTeams = [];
+        let from = 0;
+        const step = 1000;
+        let hasMore = true;
+
+        while (hasMore) {
+            const { data, error } = await supabaseClient
+                .from('teams')
+                .select('id, name')
+                .eq('sport_id', sportId)
+                .order('name')
+                .range(from, from + step - 1);
+            
+            if (data && data.length > 0) {
+                allTeams = allTeams.concat(data);
+                if (data.length < step) hasMore = false; else from += step;
+            } else {
+                hasMore = false;
+            }
+        }
+        
+        dropdownOptions = allTeams.map(t => ({
+            id: t.id,
+            name: t.name
+        }));
     }
 
-    const opts = '<option value="">-- Select Team --</option>' + 
-                 allTeams.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+    // Generate HTML
+    const opts = '<option value="">-- Select Participant --</option>' + 
+                 dropdownOptions.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
     
     t1Select.innerHTML = opts;
     if(!isBye) t2Select.innerHTML = opts;
