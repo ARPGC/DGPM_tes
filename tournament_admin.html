@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tournament Admin - Supabase Powered</title>
+    <title>Tournament Admin</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
     <style>
-        /* Custom Connector Lines for the Bracket */
+        /* Connector Lines */
         .bracket-connector-h::after {
             content: ''; position: absolute; right: -20px; top: 50%;
             width: 20px; height: 2px; background: #cbd5e1; z-index: 0;
@@ -16,11 +16,7 @@
         .bracket-connector-v {
             position: absolute; right: -20px; width: 2px; background: #cbd5e1; z-index: 0;
         }
-        .bracket-connector-v::after {
-            content: ''; position: absolute; top: 50%; left: 0;
-            width: 20px; height: 2px; background: #cbd5e1;
-        }
-        /* Hide scrollbar for cleaner look */
+        /* Hide scrollbar */
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
@@ -35,39 +31,32 @@
             </div>
             <div class="flex gap-3">
                 <button onclick="app.refreshData()" class="px-4 py-2 bg-indigo-700 hover:bg-indigo-600 rounded text-sm font-semibold transition">
-                    🔄 Refresh Data
+                    🔄 Refresh
                 </button>
                 <button onclick="ui.openSetupModal()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded text-sm font-semibold transition shadow-lg">
-                    ⚙️ New Tournament / Reset
+                    ⚙️ New Tournament
                 </button>
             </div>
         </div>
     </header>
 
-    <main class="flex-1 relative overflow-auto cursor-grab active:cursor-grabbing bg-slate-100" id="bracket-container">
-        
+    <main class="flex-1 relative overflow-auto bg-slate-100" id="bracket-container">
         <div id="loading-indicator" class="absolute inset-0 flex items-center justify-center bg-white/80 z-50">
             <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-900"></div>
         </div>
-
-        <div id="bracket-root" class="flex p-10 min-w-max min-h-full items-center">
-            </div>
-
+        <div id="bracket-root" class="flex p-10 min-w-max min-h-full items-center"></div>
     </main>
 
     <div id="match-modal" class="fixed inset-0 bg-black/60 hidden items-center justify-center z-50 backdrop-blur-sm">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all scale-100">
-            
             <div class="bg-indigo-900 p-4 flex justify-between items-center">
                 <h3 class="text-white font-bold" id="modal-match-id">Edit Match</h3>
                 <button onclick="ui.closeModal('match-modal')" class="text-indigo-300 hover:text-white text-2xl">&times;</button>
             </div>
-
             <div class="p-6">
                 <div class="text-center mb-6">
                     <span id="modal-round-name" class="bg-indigo-100 text-indigo-800 text-xs font-bold px-2 py-1 rounded uppercase">Round</span>
                 </div>
-
                 <div class="flex items-center justify-between mb-4 p-3 border rounded-lg hover:border-indigo-500 transition cursor-pointer group" id="card-team1" onclick="ui.selectWinner('team1')">
                     <div class="flex items-center gap-3">
                         <div class="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center font-bold text-slate-500 group-hover:bg-indigo-600 group-hover:text-white transition">1</div>
@@ -75,9 +64,7 @@
                     </div>
                     <input type="number" id="modal-score1" class="w-16 p-2 border rounded text-center font-mono text-lg bg-slate-50" placeholder="0" onclick="event.stopPropagation()">
                 </div>
-
                 <div class="text-center text-slate-400 text-xs font-bold mb-4">- VS -</div>
-
                 <div class="flex items-center justify-between mb-6 p-3 border rounded-lg hover:border-indigo-500 transition cursor-pointer group" id="card-team2" onclick="ui.selectWinner('team2')">
                     <div class="flex items-center gap-3">
                         <div class="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center font-bold text-slate-500 group-hover:bg-indigo-600 group-hover:text-white transition">2</div>
@@ -85,16 +72,15 @@
                     </div>
                     <input type="number" id="modal-score2" class="w-16 p-2 border rounded text-center font-mono text-lg bg-slate-50" placeholder="0" onclick="event.stopPropagation()">
                 </div>
-
                 <div class="grid grid-cols-2 gap-3">
-                    <button onclick="logic.saveMatchUpdate()" class="col-span-2 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-lg font-bold shadow-lg transition transform hover:-translate-y-0.5">
-                        💾 Save Result & Advance Winner
+                    <button onclick="logic.saveMatchUpdate()" class="col-span-2 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-lg font-bold shadow-lg transition">
+                        💾 Save & Advance
                     </button>
                     <button onclick="logic.declareBye()" class="bg-amber-500 hover:bg-amber-600 text-white py-2 rounded-lg font-semibold text-sm">
                         ⏭️ Force Bye
                     </button>
                     <button onclick="logic.resetMatch()" class="bg-red-100 hover:bg-red-200 text-red-700 py-2 rounded-lg font-semibold text-sm">
-                        ❌ Reset Match
+                        ❌ Reset
                     </button>
                 </div>
             </div>
@@ -104,28 +90,20 @@
     <div id="setup-modal" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
         <div class="bg-white rounded-lg shadow-2xl w-full max-w-2xl p-6 h-3/4 flex flex-col">
             <h2 class="text-2xl font-bold text-indigo-900 mb-2">Create New Tournament</h2>
-            <p class="text-slate-500 text-sm mb-4">Warning: This will wipe the current database table and start fresh.</p>
-            
             <div class="grid grid-cols-2 gap-4 mb-4">
                 <div>
-                    <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Sport / Event Name</label>
+                    <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Sport Name</label>
                     <input type="text" id="setup-sport" class="w-full border p-2 rounded" value="Tug of War 2026">
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Team Count</label>
+                    <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Teams</label>
                     <select id="setup-count" class="w-full border p-2 rounded bg-slate-50">
-                        <option value="4">4 Teams</option>
-                        <option value="8">8 Teams</option>
-                        <option value="16">16 Teams</option>
-                        <option value="30" selected>30 Teams (Custom)</option>
-                        <option value="32">32 Teams</option>
+                        <option value="30" selected>30 Teams</option>
                     </select>
                 </div>
             </div>
-
             <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Paste Team Names (One per line)</label>
-            <textarea id="setup-teams" class="flex-1 border p-3 rounded font-mono text-sm bg-slate-50 mb-4" placeholder="Team A&#10;Team B..."></textarea>
-
+            <textarea id="setup-teams" class="flex-1 border p-3 rounded font-mono text-sm bg-slate-50 mb-4"></textarea>
             <div class="flex justify-end gap-3">
                 <button onclick="ui.closeModal('setup-modal')" class="px-5 py-2 text-slate-500 font-bold hover:bg-slate-100 rounded">Cancel</button>
                 <button onclick="logic.generateNewTournament()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded shadow-lg">Generate Bracket</button>
@@ -133,6 +111,7 @@
         </div>
     </div>
 
+    <script src="config.js"></script>
     <script src="script.js"></script>
 </body>
 </html>
