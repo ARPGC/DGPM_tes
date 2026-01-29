@@ -1,58 +1,57 @@
 // --- CONFIGURATION ---
-let bracketData = []; // Stores current bracket data
-
-// Helper to sort rounds correctly
 const ROUND_ORDER = {
-    "round of 128": 0, "round of 64": 1, "round of 32": 2,
-    "round of 16": 3, "pre-quarter": 3,
-    "quarter-finals": 4, "quarter finals": 4, "quarter final": 4, "qf": 4,
-    "semi-finals": 5, "semi finals": 5, "semi final": 5, "sf": 5,
-    "finals": 6, "final": 6, "f": 6, "champion": 7
+    "round of 128": 0, "round of 64": 1, "round of 32": 2, "round of 16": 3,
+    "quarter-finals": 4, "quarter finals": 4, "qf": 4,
+    "semi-finals": 5, "semi finals": 5, "sf": 5,
+    "finals": 6, "final": 6, "champion": 7
 };
 
-// --- INITIALIZATION ---
+// --- INIT ---
 document.addEventListener('DOMContentLoaded', async () => {
-    // 1. Check Auth
-    const session = localStorage.getItem('admin_session');
-    // if (!session) window.location.href = 'index.html'; // Uncomment to enforce login
+    console.log("Initializing Bracket View...");
 
-    // 2. Load Icons
+    // 1. Critical Check: Is Supabase loaded?
+    if (typeof supabase === 'undefined') {
+        alert("CRITICAL ERROR: Supabase not found. \n\nMake sure 'config.js' is loaded BEFORE 's.js' and contains the correct URL/Key.");
+        return;
+    }
+
     lucide.createIcons();
-
-    // 3. Setup Listeners
     window.addEventListener('resize', drawConnectors);
 
-    // 4. Load Sports Dropdown
+    // 2. Try to load sports
     await fetchSportsForDropdowns();
 });
 
-function adminLogout() {
-    localStorage.removeItem('admin_session');
-    window.location.href = 'index.html';
-}
-
-// --- CORE: FETCH & RENDER BRACKETS ---
+// --- CORE FUNCTIONS ---
 
 async function fetchSportsForDropdowns() {
+    const select = document.getElementById('bracket-sport');
+    
     try {
-        if (typeof supabase === 'undefined') {
-            console.error("Supabase not initialized. Check config.js");
+        // Query specific columns to ensure they exist
+        const { data, error } = await supabase.from('matches').select('sport_name');
+        
+        if (error) {
+            console.error("Supabase Error:", error);
+            alert(`Database Error: ${error.message}\n\nHint: Check if your table is named 'matches' and has a column 'sport_name'.`);
+            select.innerHTML = '<option>Error loading sports</option>';
             return;
         }
 
-        const { data, error } = await supabase.from('matches').select('sport_name');
-        if (error) throw error;
+        if (!data || data.length === 0) {
+            select.innerHTML = '<option>No matches found in DB</option>';
+            return;
+        }
 
-        // Unique Sports
+        // Get unique sports
         const sports = [...new Set(data.map(item => item.sport_name))].sort();
         
-        const select = document.getElementById('bracket-sport');
         select.innerHTML = '<option value="">Select Sport</option>';
         sports.forEach(s => select.innerHTML += `<option value="${s}">${s}</option>`);
 
     } catch (err) {
-        console.error("Sport fetch error:", err);
-        showToast('error', 'Failed to load sports list');
+        alert("Unexpected Error: " + err.message);
     }
 }
 
@@ -61,59 +60,57 @@ async function loadBracket() {
     const category = document.getElementById('bracket-category').value;
     const gender = document.getElementById('bracket-gender').value;
 
-    if (!sport) {
-        showToast('info', 'Please select a sport');
-        return;
-    }
+    if (!sport) return alert("Please select a sport first.");
 
     const root = document.getElementById('bracket-root');
-    root.innerHTML = '<div class="flex items-center justify-center w-full h-64"><p class="animate-pulse font-bold text-indigo-600">Loading Matches...</p></div>';
+    root.innerHTML = '<div class="p-10 font-bold text-gray-400">Loading Matches...</div>';
 
     try {
-        // Define Gender Keywords for fuzzy matching
-        const genderTerms = gender === 'Male' ? ['Boys', 'Men', 'Male'] : ['Girls', 'Women', 'Female', 'Ladies'];
+        // Prepare gender keywords
+        const genderTerms = gender === 'Male' ? ['Boys', 'Men', 'Male'] : ['Girls', 'Women', 'Female'];
 
-        // 1. Database Query
+        // 1. Fetch Data
         let query = supabase
             .from('matches')
             .select('*')
             .eq('sport_name', sport)
-            .ilike('match_type', `%${category}%`); // Filter by "Junior" or "Degree"
+            .ilike('match_type', `%${category}%`);
 
         const { data, error } = await query;
+        
         if (error) throw error;
 
-        // 2. Client-side Gender Filter
+        // 2. Filter Gender (Client-side)
         let filteredData = data.filter(m => {
-             const type = (m.match_type || "").toLowerCase();
-             return genderTerms.some(term => type.includes(term.toLowerCase()));
+            const type = (m.match_type || "").toLowerCase();
+            return genderTerms.some(t => type.includes(t.toLowerCase()));
         });
 
-        // 3. Handle No Data
+        // 3. Check Results
         if (filteredData.length === 0) {
-            root.innerHTML = `
-                <div class="flex flex-col items-center justify-center w-full h-64 text-gray-400 gap-2">
-                    <span class="font-bold">No matches found.</span>
-                    <span class="text-xs">Try different filters.</span>
-                </div>`;
-            updateBracketTable([]);
-            bracketData = [];
+            root.innerHTML = `<div class="p-10 text-center text-red-500 font-bold">
+                No matches found.<br>
+                <span class="text-xs text-gray-500 font-normal">
+                    Looking for Sport: "${sport}" <br>
+                    Category containing: "${category}" <br>
+                    And Gender keywords like: "${genderTerms.join(', ')}"
+                </span>
+            </div>`;
+            updateTable([]);
             return;
         }
 
         // 4. Render
-        bracketData = filteredData;
-        renderBracketTree(filteredData);
-        updateBracketTable(filteredData);
-        showToast('success', `Loaded ${filteredData.length} matches`);
+        renderTree(filteredData);
+        updateTable(filteredData);
 
     } catch (err) {
         console.error(err);
-        showToast('error', err.message);
+        root.innerHTML = `<div class="p-10 text-red-600 font-bold">Error: ${err.message}</div>`;
     }
 }
 
-function renderBracketTree(matches) {
+function renderTree(matches) {
     const root = document.getElementById('bracket-root');
     root.innerHTML = '';
 
@@ -132,189 +129,115 @@ function renderBracketTree(matches) {
         return valA - valB;
     });
 
-    // Create Columns
+    // Build DOM
     sortedRoundNames.forEach((roundName, rIndex) => {
         const roundDiv = document.createElement('div');
         roundDiv.className = 'round';
         
-        // Title
         const title = document.createElement('div');
         title.className = 'round-title';
         title.innerText = roundName;
         roundDiv.appendChild(title);
 
-        // Sort matches by ID for stable pairing
         const roundMatches = roundsMap[roundName].sort((a,b) => a.id - b.id);
 
         roundMatches.forEach((m, mIndex) => {
-            roundDiv.appendChild(createMatchCard(m, rIndex, mIndex));
+            roundDiv.appendChild(createCard(m, rIndex, mIndex));
         });
 
         root.appendChild(roundDiv);
     });
 
-    // Add Champion Box
-    addChampionBox(roundsMap, sortedRoundNames, root);
+    // Add Champion
+    addChampion(roundsMap, sortedRoundNames, root);
     
-    // Draw Lines
+    // Lines
     setTimeout(drawConnectors, 100);
 }
 
-function createMatchCard(match, roundIndex, matchIndex) {
+function createCard(match, rIndex, mIndex) {
     const wrap = document.createElement('div');
     wrap.className = 'match-wrapper';
-    wrap.id = `R${roundIndex}-M${matchIndex}`;
-    
-    // Mark start of pair (for lines)
-    if (matchIndex % 2 === 0) wrap.setAttribute('data-pair-start', 'true');
+    if (mIndex % 2 === 0) wrap.setAttribute('data-pair-start', 'true');
 
     const w = match.winner;
     const t1 = match.team1 || 'TBD';
     const t2 = match.team2 || 'TBD';
-    
     const isT1 = w && w === t1 && t1 !== 'TBD';
     const isT2 = w && w === t2 && t2 !== 'TBD';
 
     wrap.innerHTML = `
         <div class="match-card">
             <div class="${isT1 ? 'team winner' : 'team'}">
-                <span class="truncate w-32 font-medium" title="${t1}">${t1}</span>
-                ${isT1 ? '<span class="team-score">W</span>' : ''}
+                <span class="truncate w-32 font-medium">${t1}</span>
+                ${isT1 ? '<span>W</span>' : ''}
             </div>
             <div class="${isT2 ? 'team winner' : 'team'}">
-                <span class="truncate w-32 font-medium" title="${t2}">${t2}</span>
-                ${isT2 ? '<span class="team-score">W</span>' : ''}
+                <span class="truncate w-32 font-medium">${t2}</span>
+                ${isT2 ? '<span>W</span>' : ''}
             </div>
-        </div>
-    `;
+        </div>`;
     return wrap;
 }
 
-function addChampionBox(roundsMap, sortedRoundNames, root) {
-    const lastRoundName = sortedRoundNames[sortedRoundNames.length - 1];
-    if(!lastRoundName) return;
-
-    const matches = roundsMap[lastRoundName];
-    // If it's a Final and has 1 match with a winner
-    if (lastRoundName.toLowerCase().includes('final') && matches.length === 1) {
-        const final = matches[0];
-        if (final.winner && final.winner !== 'TBD') {
-            const champ = document.createElement('div');
-            champ.className = 'round';
-            champ.innerHTML = `
+function addChampion(roundsMap, sortedRoundNames, root) {
+    const lastRound = sortedRoundNames[sortedRoundNames.length - 1];
+    if (lastRound && lastRound.toLowerCase().includes('final')) {
+        const match = roundsMap[lastRound][0];
+        if (match && match.winner && match.winner !== 'TBD') {
+            const div = document.createElement('div');
+            div.className = 'round';
+            div.innerHTML = `
                 <div class="round-title text-yellow-600">CHAMPION</div>
                 <div class="match-wrapper">
                     <div class="match-card" style="border: 2px solid #b8860b;">
-                        <div class="team winner" style="justify-content:center; height:50px; background: #fffbeb;">
-                            🏆 <span class="font-black text-[#b8860b] ml-2">${final.winner}</span>
+                        <div class="team winner" style="justify-content:center; height:50px;">
+                            🏆 <span class="font-black text-[#b8860b] ml-2">${match.winner}</span>
                         </div>
                     </div>
                 </div>`;
-            root.appendChild(champ);
+            root.appendChild(div);
         }
     }
 }
 
-// --- VISUAL CONNECTORS (THE LINES) ---
-
 function drawConnectors() {
-    // Remove old lines
     document.querySelectorAll('.connector-vertical').forEach(e => e.remove());
-
     const pairs = document.querySelectorAll('[data-pair-start="true"]');
     const container = document.getElementById('bracket-root').getBoundingClientRect();
 
-    pairs.forEach(startEl => {
-        let endEl = startEl.nextElementSibling;
-        
-        // Validation: Next sibling must be a match card
-        if (!endEl || !endEl.classList.contains('match-wrapper')) return;
+    pairs.forEach(start => {
+        let end = start.nextElementSibling;
+        if (!end || !end.classList.contains('match-wrapper')) return;
 
-        const r1 = startEl.getBoundingClientRect();
-        const r2 = endEl.getBoundingClientRect();
-
-        const y1 = (r1.top + r1.height / 2) - container.top;
-        const y2 = (r2.top + r2.height / 2) - container.top;
-        const height = y2 - y1;
+        const r1 = start.getBoundingClientRect();
+        const r2 = end.getBoundingClientRect();
+        const height = (r2.top + r2.height / 2) - (r1.top + r1.height / 2);
 
         if (height > 0) {
             const line = document.createElement('div');
             line.className = 'connector-vertical';
             line.style.height = height + 'px';
             line.style.top = '50%';
-            startEl.appendChild(line);
+            start.appendChild(line);
         }
     });
 }
 
-// --- UTILITIES & EXPORTS ---
-
-function toggleBracketView() {
+function toggleView() {
     const tree = document.getElementById('bracket-container');
     const table = document.getElementById('bracket-table-view');
-    
     if (tree.style.display === 'none') {
-        tree.style.display = 'block';
-        table.classList.add('hidden');
+        tree.style.display = 'block'; table.classList.add('hidden');
     } else {
-        tree.style.display = 'none';
-        table.classList.remove('hidden');
+        tree.style.display = 'none'; table.classList.remove('hidden');
     }
 }
 
-function updateBracketTable(data) {
+function updateTable(data) {
     const tbody = document.getElementById('bracket-table-body');
-    if(!tbody) return;
     tbody.innerHTML = '';
     data.forEach(m => {
-        tbody.innerHTML += `
-            <tr class="bg-white hover:bg-gray-50 transition-colors">
-                <td class="p-3 border-b text-xs text-gray-500 uppercase font-bold">${m.round_name}</td>
-                <td class="p-3 border-b font-bold text-gray-800">${m.team1 || 'TBD'}</td>
-                <td class="p-3 border-b font-bold text-gray-800">${m.team2 || 'TBD'}</td>
-                <td class="p-3 border-b font-bold text-green-600">${m.winner || '-'}</td>
-            </tr>`;
+        tbody.innerHTML += `<tr class="bg-white"><td class="p-3">${m.round_name}</td><td class="p-3">${m.team1}</td><td class="p-3">${m.team2}</td><td class="p-3 font-bold text-green-600">${m.winner || '-'}</td></tr>`;
     });
-}
-
-function exportBracketExcel() {
-    if (!bracketData.length) return showToast('error', 'No data to export');
-    
-    const cleanData = bracketData.map(m => ({
-        "Round": m.round_name,
-        "Team 1": m.team1,
-        "Team 2": m.team2,
-        "Winner": m.winner || "Pending",
-        "Category": m.match_type
-    }));
-
-    const ws = XLSX.utils.json_to_sheet(cleanData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Results");
-    XLSX.writeFile(wb, "Bracket_Results.xlsx");
-}
-
-function printBracketPDF() {
-    // Just force visual view and print
-    document.getElementById('bracket-container').style.display = 'block';
-    document.getElementById('bracket-table-view').classList.add('hidden');
-    window.print();
-}
-
-function showToast(type, msg) {
-    const toast = document.getElementById('toast-container');
-    const msgEl = document.getElementById('toast-msg');
-    const iconEl = document.getElementById('toast-icon');
-    
-    if(!toast) return;
-
-    toast.classList.remove('opacity-0', 'translate-y-10');
-    msgEl.innerText = msg;
-    
-    if(type === 'success') iconEl.innerHTML = '<i data-lucide="check-circle" class="text-green-400 w-5 h-5"></i>';
-    else if (type === 'error') iconEl.innerHTML = '<i data-lucide="x-circle" class="text-red-400 w-5 h-5"></i>';
-    else iconEl.innerHTML = '<i data-lucide="info" class="text-blue-400 w-5 h-5"></i>';
-    
-    lucide.createIcons();
-    setTimeout(() => toast.classList.add('opacity-0', 'translate-y-10'), 3000);
 }
