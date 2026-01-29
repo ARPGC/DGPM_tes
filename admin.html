@@ -67,6 +67,9 @@
             <button onclick="switchView('matches')" id="nav-matches" class="nav-item w-full flex items-center gap-3 px-6 py-3 text-sm font-bold text-gray-500">
                 <i data-lucide="calendar" class="w-5 h-5"></i> Schedule & Matches
             </button>
+            <button onclick="switchView('results')" id="nav-results" class="nav-item w-full flex items-center gap-3 px-6 py-3 text-sm font-bold text-gray-500">
+                <i data-lucide="trophy" class="w-5 h-5"></i> Event Results
+            </button>
             
             <div class="px-6 pt-4 pb-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Data & Users</div>
             
@@ -94,10 +97,10 @@
             <h2 id="page-title" class="text-3xl font-black text-gray-900 tracking-tight">Dashboard</h2>
             
             <div id="global-actions" class="hidden flex gap-2">
-                <button onclick="exportCurrentPage('excel')" class="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-all active:scale-95">
+                <button id="btn-generic-excel" onclick="exportCurrentPage('excel')" class="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-all active:scale-95">
                     <i data-lucide="sheet" class="w-4 h-4"></i> View Excel
                 </button>
-                <button onclick="exportCurrentPage('pdf')" class="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-red-200 hover:bg-red-700 transition-all active:scale-95">
+                <button id="btn-generic-pdf" onclick="exportCurrentPage('pdf')" class="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-red-200 hover:bg-red-700 transition-all active:scale-95">
                     <i data-lucide="file-text" class="w-4 h-4"></i> View PDF
                 </button>
                 
@@ -115,6 +118,13 @@
                 </button>
                 <button id="btn-squad-pdf" onclick="downloadSquadsPDF()" class="hidden flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-95">
                     <i data-lucide="users-round" class="w-4 h-4"></i> Squads PDF
+                </button>
+
+                <button id="btn-results-excel" onclick="downloadResultsExcel()" class="hidden flex items-center gap-2 px-4 py-2 bg-green-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-green-200 hover:bg-green-800 transition-all active:scale-95">
+                    <i data-lucide="medal" class="w-4 h-4"></i> Results Excel
+                </button>
+                <button id="btn-results-pdf" onclick="downloadResultsPDF()" class="hidden flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-amber-200 hover:bg-amber-700 transition-all active:scale-95">
+                    <i data-lucide="award" class="w-4 h-4"></i> Results PDF
                 </button>
             </div>
         </div>
@@ -136,6 +146,58 @@
             </div>
         </div>
 
+        <div id="view-results" class="view-section hidden animate-fade-in">
+            <div class="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="p-4 border-b border-gray-100 flex flex-wrap gap-4 items-center bg-gray-50/50">
+                    <div class="flex-1 min-w-[200px]">
+                        <div class="relative">
+                            <i data-lucide="search" class="absolute left-3 top-3 w-4 h-4 text-gray-400"></i>
+                            <input type="text" id="result-search" onkeyup="filterResults()" placeholder="Search Event or Student..." class="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-brand-primary/20 transition-all">
+                        </div>
+                    </div>
+                    
+                    <select id="filter-result-event" onchange="filterResults()" class="bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none cursor-pointer hover:border-brand-primary transition-all">
+                        <option value="">All Events</option>
+                    </select>
+
+                    <select id="filter-result-gender" onchange="filterResults()" class="bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none cursor-pointer hover:border-brand-primary transition-all">
+                        <option value="">All Genders</option>
+                        <option value="Boys">Boys</option>
+                        <option value="Girls">Girls</option>
+                    </select>
+
+                    <select id="filter-result-class" onchange="filterResults()" class="bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none cursor-pointer hover:border-brand-primary transition-all">
+                        <option value="">All Categories</option>
+                        <option value="Junior">Junior</option>
+                        <option value="Degree">Degree</option>
+                    </select>
+                    
+                    <button onclick="resetResultFilters()" class="p-2.5 bg-gray-200 text-gray-600 rounded-xl hover:bg-gray-300 transition-colors">
+                        <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-gray-50 text-gray-500 text-[10px] uppercase tracking-wider font-bold">
+                                <th class="p-4 border-b">Event Name</th>
+                                <th class="p-4 border-b">Category</th>
+                                <th class="p-4 border-b">Gender</th>
+                                <th class="p-4 border-b">Rank</th>
+                                <th class="p-4 border-b">Student Name</th>
+                                <th class="p-4 border-b text-right">Medal</th>
+                            </tr>
+                        </thead>
+                        <tbody id="results-table-body" class="text-sm font-medium text-gray-700"></tbody>
+                    </table>
+                </div>
+                <div class="p-3 bg-gray-50 border-t border-gray-100 text-[10px] font-bold text-gray-400 text-right uppercase tracking-wider">
+                    Total Results: <span id="result-count" class="text-gray-900">0</span>
+                </div>
+            </div>
+        </div>
+
         <div id="view-registrations" class="view-section hidden animate-fade-in">
             <div class="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden">
                 <div class="p-4 border-b border-gray-100 flex flex-wrap gap-4 items-center bg-gray-50/50">
@@ -148,7 +210,7 @@
                     
                     <select id="filter-reg-sport" onchange="filterRegistrations()" class="bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none cursor-pointer hover:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 transition-all">
                         <option value="">All Sports</option>
-                        </select>
+                    </select>
 
                     <select id="filter-reg-gender" onchange="filterRegistrations()" class="bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none cursor-pointer hover:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 transition-all">
                         <option value="">All Genders</option>
@@ -171,20 +233,15 @@
                     <table class="w-full text-left border-collapse">
                         <thead>
                             <tr class="bg-gray-50 text-gray-500 text-[10px] uppercase tracking-wider font-bold">
-                                <th class="p-4 border-b cursor-pointer hover:text-brand-primary group" onclick="sortRegistrations('name')">
-                                    Student <i data-lucide="arrow-up-down" class="w-3 h-3 inline ml-1 opacity-0 group-hover:opacity-100 transition-opacity"></i>
-                                </th>
-                                <th class="p-4 border-b cursor-pointer hover:text-brand-primary group" onclick="sortRegistrations('sport')">
-                                    Sport <i data-lucide="arrow-up-down" class="w-3 h-3 inline ml-1 opacity-0 group-hover:opacity-100 transition-opacity"></i>
-                                </th>
+                                <th class="p-4 border-b">Student</th>
+                                <th class="p-4 border-b">Sport</th>
                                 <th class="p-4 border-b">Class / ID</th>
                                 <th class="p-4 border-b">Gender</th>
                                 <th class="p-4 border-b">Contact</th>
                                 <th class="p-4 border-b text-right">Registered On</th>
                             </tr>
                         </thead>
-                        <tbody id="registrations-table-body" class="text-sm font-medium text-gray-700">
-                            </tbody>
+                        <tbody id="registrations-table-body" class="text-sm font-medium text-gray-700"></tbody>
                     </table>
                 </div>
                 
@@ -349,8 +406,7 @@
                             <th class="p-4 border-b text-right">Action</th>
                         </tr>
                     </thead>
-                    <tbody id="modal-squad-body" class="text-sm font-medium text-gray-700 divide-y divide-gray-100">
-                        </tbody>
+                    <tbody id="modal-squad-body" class="text-sm font-medium text-gray-700 divide-y divide-gray-100"></tbody>
                 </table>
             </div>
 
