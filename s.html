@@ -195,12 +195,14 @@
     // ============================================
     // 1. SAFE CONFIGURATION CHECK
     // ============================================
-    let supabase;
+    let db; // Renamed from 'supabase' to avoid conflict
+    
     try {
         if (typeof CONFIG === 'undefined' || !CONFIG.supabaseUrl) {
             throw new Error("Configuration file (config.js) not found or invalid.");
         }
-        supabase = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
+        // Initialize Client using global window.supabase object
+        db = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
     } catch (err) {
         document.getElementById('loading').innerHTML = `<p style="color:red; font-weight:bold;">Error: ${err.message}</p>`;
         throw err; // Stop execution
@@ -224,7 +226,7 @@
 
     async function initFilters() {
         // Fetch Sports
-        const { data: sports, error: err1 } = await supabase.from('sports').select('id, name');
+        const { data: sports, error: err1 } = await db.from('sports').select('id, name');
         if (err1) throw err1;
 
         const sSelect = document.getElementById('sportFilter');
@@ -234,7 +236,7 @@
         });
 
         // Fetch Categories (Match Types)
-        const { data: matches, error: err2 } = await supabase.from('matches').select('match_type');
+        const { data: matches, error: err2 } = await db.from('matches').select('match_type');
         if (err2) throw err2;
 
         const cSelect = document.getElementById('categoryFilter');
@@ -268,7 +270,7 @@
         document.getElementById('loading').style.display = 'flex';
 
         // Fetch Matches
-        let query = supabase.from('matches').select('*')
+        let query = db.from('matches').select('*')
             .order('round_number', { ascending: true })
             .order('id', { ascending: true });
 
