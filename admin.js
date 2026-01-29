@@ -794,23 +794,101 @@ window.downloadResultsPDF = function() {
     if (!dataCache || dataCache.length === 0) return showToast("No results to export", "error");
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
-    doc.setFontSize(22);
-    doc.text("URJA 2026 - EVENT WINNERS", 14, 20);
+
+    // 1. Setup Header
+    doc.setFontSize(20);
+    doc.setTextColor(245, 158, 11); // Amber-500 for Header
+    doc.text("URJA 3.0 - PERFORMANCE EVENT WINNERS", 14, 20);
+    
     doc.setFontSize(10);
+    doc.setTextColor(100); // Gray
     doc.text(`Official Results Generated: ${new Date().toLocaleString()}`, 14, 26);
 
-    const headers = ["Event", "Category", "Gender", "Rank", "Student Name", "Medal"];
-    const rows = dataCache.map(r => [r.Event, r.Category, r.Gender, r.Rank, r.Student, r.Medal]);
+    let yPos = 35;
 
-    doc.autoTable({
-        head: [headers],
-        body: rows,
-        startY: 35,
-        theme: 'striped',
-        headStyles: { fillColor: [217, 119, 6] }, // Amber/Gold color
-        styles: { fontSize: 9 }
+    // 2. Group Data Logic
+    // Structure: { "100m Race": { "Degree Boys": [rows], "Junior Girls": [rows] } }
+    const groupedData = {};
+
+    dataCache.forEach(row => {
+        const eventName = row.Event;
+        const subCategory = `${row.Category} ${row.Gender}`; // e.g., "Degree Boys"
+
+        if (!groupedData[eventName]) {
+            groupedData[eventName] = {};
+        }
+        if (!groupedData[eventName][subCategory]) {
+            groupedData[eventName][subCategory] = [];
+        }
+
+        // Add row simplified for PDF
+        groupedData[eventName][subCategory].push([
+            row.Rank, 
+            row.Student, 
+            row.Medal
+        ]);
     });
-    doc.save(`Urja_Official_Results_${new Date().toISOString().split('T')[0]}.pdf`);
+
+    // 3. Render Tables
+    const eventNames = Object.keys(groupedData).sort();
+
+    eventNames.forEach(eventName => {
+        // Check for page break if near bottom
+        if (yPos > 250) {
+            doc.addPage();
+            yPos = 20;
+        }
+
+        // Print Event Title (e.g., "100m Race")
+        doc.setFontSize(16);
+        doc.setTextColor(0, 0, 0); // Black
+        doc.text(eventName, 14, yPos);
+        yPos += 8;
+
+        const subCats = Object.keys(groupedData[eventName]).sort();
+
+        subCats.forEach(subCat => {
+            // Sort rows by Rank (1, 2, 3)
+            const rows = groupedData[eventName][subCat].sort((a,b) => a[0] - b[0]);
+
+            // Print Sub-Category Title (e.g., "Degree Boys")
+            doc.setFontSize(12);
+            doc.setTextColor(79, 70, 229); // Indigo
+            doc.text(subCat, 14, yPos);
+            yPos += 2; // Spacing before table
+
+            doc.autoTable({
+                startY: yPos,
+                head: [['Rank', 'Student Name', 'Medal']],
+                body: rows,
+                theme: 'grid',
+                headStyles: { 
+                    fillColor: [245, 158, 11], // Amber background for table header
+                    textColor: [255, 255, 255],
+                    fontSize: 10
+                },
+                styles: { fontSize: 10, cellPadding: 3 },
+                columnStyles: {
+                    0: { cellWidth: 20, fontStyle: 'bold' }, // Rank
+                    2: { cellWidth: 30, fontStyle: 'bold' }  // Medal
+                },
+                margin: { left: 14 }
+            });
+
+            // Update yPos for next table
+            yPos = doc.lastAutoTable.finalY + 10;
+            
+            // Safety Check for Page Break
+            if (yPos > 270) {
+                doc.addPage();
+                yPos = 20;
+            }
+        });
+
+        yPos += 5; // Extra spacing between Events
+    });
+
+    doc.save(`Urja_Performance_Results_${new Date().toISOString().split('T')[0]}.pdf`);
     showToast("Results PDF Downloaded", "success");
 }
 
