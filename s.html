@@ -3,29 +3,93 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tournament Brackets | Admin</title>
+    <title>Sports Fest 2025 - Official Bracket</title>
     
-    <link rel="icon" type="image/png" href="https://i.ibb.co/zWLqKLg4/Untitled-1.png">
-
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
-    <script src="config.js"></script> 
-    <script src="s.js" defer></script>
+    <script src="config.js"></script>
+    <script src="config2.js"></script>
 
     <style>
-        body { font-family: 'Inter', sans-serif; background: #f3f4f6; }
-        
-        /* --- BRACKET THEME (Oxford Blue) --- */
-        :root { --bracket-primary: #003366; --bracket-connector: #94a3b8; }
+        :root {
+            --primary: #003366; /* Oxford Blue */
+            --secondary: #b8860b; /* Dark Goldenrod */
+            --bg-page: #f4f6f9;
+            --bg-card: #ffffff;
+            --border: #d1d5db;
+            --text-dark: #111827;
+            --text-light: #6b7280;
+            --connector: #94a3b8;
+            --card-width: 220px;
+        }
 
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', 'Roboto', Helvetica, Arial, sans-serif;
+            background-color: var(--bg-page);
+            color: var(--text-dark);
+            margin: 0;
+            padding: 20px;
+        }
+
+        /* --- DASHBOARD HEADER --- */
+        .dashboard-header {
+            background: linear-gradient(135deg, var(--primary) 0%, #1a237e 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .header-info h1 { margin: 0; font-size: 1.8rem; letter-spacing: 1px; }
+        .header-info p { margin: 5px 0 0 0; opacity: 0.9; font-size: 0.9rem; }
+
+        /* --- FILTERS --- */
+        .filter-group {
+            display: flex;
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .custom-select {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            outline: none;
+            min-width: 150px;
+        }
+        .custom-select option { background: var(--primary); color: white; }
+
+        /* --- ACTION BAR --- */
+        .action-bar { display: flex; gap: 10px; }
+
+        .btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 10px 20px; border-radius: 6px; font-weight: 600;
+            cursor: pointer; border: none; transition: all 0.2s; font-size: 0.9rem;
+        }
+
+        .btn-excel { background-color: #107c41; color: white; }
+        .btn-pdf { background-color: #cf2e2e; color: white; }
+        .btn-toggle { background-color: white; color: var(--primary); border: 1px solid white; }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+
+        /* --- BRACKET CONTAINER --- */
         .bracket-scroll {
             overflow-x: auto;
-            padding: 40px;
+            padding: 40px 20px;
             background: white;
             border-radius: 12px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.05);
@@ -33,14 +97,14 @@
             position: relative;
         }
 
-        .bracket-tree { display: flex; padding-right: 50px; width: max-content; }
+        .bracket-tree { display: flex; padding-right: 50px; }
 
         .round {
             display: flex;
             flex-direction: column;
             justify-content: space-around;
-            min-width: 220px;
-            margin-right: 60px;
+            min-width: var(--card-width);
+            margin-right: 80px;
             position: relative;
         }
 
@@ -49,101 +113,540 @@
             text-transform: uppercase;
             font-size: 0.75rem;
             font-weight: 700;
-            color: #6b7280;
+            color: var(--text-light);
             margin-bottom: 20px;
+            letter-spacing: 1.5px;
             position: absolute;
-            top: -30px;
+            top: -40px;
             width: 100%;
         }
 
-        /* Matches */
-        .match-wrapper { position: relative; margin: 10px 0; display: flex; align-items: center; }
-        
+        /* --- MATCH CARD --- */
+        .match-wrapper {
+            position: relative;
+            margin: 10px 0;
+            display: flex;
+            align-items: center;
+        }
+
         .match-card {
             background: white;
-            border: 1px solid #d1d5db;
+            border: 1px solid var(--border);
             border-radius: 6px;
             width: 100%;
             position: relative;
             z-index: 2;
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            overflow: hidden;
+            transition: border-color 0.2s;
+        }
+        .match-card:hover { border-color: var(--primary); }
+
+        .team {
+            padding: 8px 12px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            height: 36px;
+            align-items: center;
+        }
+        .team:first-child { border-bottom: 1px solid #f3f4f6; }
+        
+        /* Winner Styles */
+        .team.winner { background-color: #eef2ff; font-weight: 700; color: var(--primary); }
+        .score { 
+            background: #f3f4f6; min-width: 24px; text-align: center; 
+            border-radius: 4px; font-size: 0.75rem; padding: 2px 5px;
+        }
+        .team.winner .score { background: var(--primary); color: white; }
+
+        /* --- CONNECTORS --- */
+        .match-wrapper::after {
+            content: ''; position: absolute; right: -40px;
+            width: 40px; height: 2px; background: var(--connector); top: 50%;
+        }
+        .round:last-child .match-wrapper::after { display: none; }
+
+        .connector-vertical {
+            position: absolute; right: -40px; width: 2px;
+            background: var(--connector); z-index: 1;
+        }
+        .connector-vertical::after {
+            content: ''; position: absolute; top: 50%; left: 100%;
+            width: 40px; height: 2px; background: var(--connector);
         }
 
-        .team { padding: 8px 12px; display: flex; justify-content: space-between; font-size: 0.85rem; height: 38px; align-items: center; }
-        .team:first-child { border-bottom: 1px solid #f3f4f6; }
-        .team.winner { background-color: #eef2ff; font-weight: 700; color: var(--bracket-primary); }
-        .team.winner span:last-child { background: var(--bracket-primary); color: white; padding: 1px 6px; border-radius: 4px; font-size: 0.7rem; }
+        /* --- DATA TABLE --- */
+        #data-view {
+            display: none;
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: 20px;
+        }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; font-size: 0.9rem; }
+        th { background-color: var(--primary); color: white; }
+        tr:nth-child(even) { background-color: #f9fafb; }
 
-        /* Connectors */
-        .match-wrapper::after { content: ''; position: absolute; right: -30px; width: 30px; height: 2px; background: var(--bracket-connector); top: 50%; }
-        .round:last-child .match-wrapper::after { display: none; }
-        .connector-vertical { position: absolute; right: -30px; width: 2px; background: var(--bracket-connector); z-index: 1; }
-        .connector-vertical::after { content: ''; position: absolute; top: 50%; left: 100%; width: 30px; height: 2px; background: var(--bracket-connector); }
+        /* --- LOADING SPINNER --- */
+        #loading {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255,255,255,0.9); z-index: 1000;
+            display: flex; justify-content: center; align-items: center;
+        }
+        .spinner {
+            width: 40px; height: 40px; border: 4px solid #f3f3f3;
+            border-top: 4px solid var(--primary); border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-        /* Print Override */
+        /* --- PRINT --- */
         @media print {
-            body * { visibility: hidden; }
-            #bracket-container, #bracket-container * { visibility: visible; }
-            #bracket-container { position: absolute; left: 0; top: 0; width: 100%; height: 100%; padding: 0; box-shadow: none; }
-            .no-print { display: none !important; }
+            @page { size: landscape; margin: 5mm; }
+            body { background: white; padding: 0; }
+            .dashboard-header { background: white; color: black; border-bottom: 2px solid var(--primary); box-shadow: none; padding: 10px 0; }
+            .header-info h1 { color: var(--primary); }
+            .custom-select, .action-bar, .btn { display: none; }
+            .bracket-scroll { box-shadow: none; overflow: visible; padding: 0; }
+            .match-wrapper::after, .connector-vertical, .connector-vertical::after {
+                background-color: #666 !important; -webkit-print-color-adjust: exact;
+            }
+            .team.winner { background-color: #e0e7ff !important; -webkit-print-color-adjust: exact; }
         }
     </style>
 </head>
-<body class="p-8">
+<body>
 
-    <div class="bg-[#003366] text-white p-6 rounded-3xl shadow-xl mb-6 flex flex-wrap justify-between items-center gap-4 no-print">
-        <div>
-            <h1 class="text-2xl font-black italic tracking-tighter">TOURNAMENT BRACKETS</h1>
-            <p class="text-xs text-indigo-200 uppercase tracking-widest">Visual Explorer</p>
-        </div>
-        
-        <div class="flex flex-wrap gap-2 items-center bg-white/10 p-2 rounded-xl backdrop-blur-sm border border-white/20">
-            <select id="bracket-sport" class="bg-white/20 border-none text-white text-xs font-bold rounded-lg p-2.5 outline-none cursor-pointer">
-                <option value="" class="text-gray-900">Loading Sports...</option>
-            </select>
+    <div id="loading"><div class="spinner"></div></div>
 
-            <select id="bracket-category" class="bg-white/20 border-none text-white text-xs font-bold rounded-lg p-2.5 outline-none cursor-pointer">
-                <option value="Junior" class="text-gray-900">Junior</option>
-                <option value="Degree" class="text-gray-900">Degree</option>
-            </select>
-            <select id="bracket-gender" class="bg-white/20 border-none text-white text-xs font-bold rounded-lg p-2.5 outline-none cursor-pointer">
-                 <option value="Male" class="text-gray-900">Male</option>
-                 <option value="Female" class="text-gray-900">Female</option>
-            </select>
-
-            <button onclick="loadBracket()" class="bg-white text-[#003366] px-5 py-2.5 rounded-lg text-xs font-black hover:bg-indigo-50 shadow-lg uppercase">
-                Load View
-            </button>
-        </div>
-
-        <div class="flex gap-2">
-            <button onclick="toggleView()" class="bg-white/20 hover:bg-white/30 text-white p-2.5 rounded-lg border border-white/20" title="Toggle Table">
-                <i data-lucide="table" class="w-5 h-5"></i>
-            </button>
-            <button onclick="window.print()" class="bg-[#cf2e2e] hover:bg-[#a32424] text-white p-2.5 rounded-lg border border-[#cf2e2e]" title="Print PDF">
-                <i data-lucide="printer" class="w-5 h-5"></i>
-            </button>
-        </div>
-    </div>
-
-    <div id="bracket-container" class="bracket-scroll">
-        <div class="bracket-tree" id="bracket-root">
-            <div class="flex h-[400px] w-full items-center justify-center flex-col gap-4 text-gray-400">
-                <i data-lucide="git-merge" class="w-12 h-12 opacity-20"></i>
-                <span class="font-bold text-sm uppercase tracking-widest opacity-60">Select filters and click Load</span>
+    <div class="dashboard-header">
+        <div class="header-info">
+            <h1>B. K. Birla College, Kalyan</h1>
+            <p>Annual Sports Fest 2025-26 | Tournament Brackets</p>
+            
+            <div class="filter-group">
+                <select id="sportFilter" class="custom-select" onchange="loadBracketData()">
+                    <option value="">Select Sport...</option>
+                </select>
+                <select id="categoryFilter" class="custom-select" onchange="loadBracketData()">
+                    <option value="">Select Category...</option>
+                </select>
             </div>
         </div>
+        
+        <div class="action-bar">
+            <button class="btn btn-toggle" onclick="toggleView()">📊 Toggle List</button>
+            <button class="btn btn-excel" onclick="exportExcel()">📗 Excel</button>
+            <button class="btn btn-pdf" onclick="printPDF()">📕 PDF</button>
+        </div>
     </div>
 
-    <div id="bracket-table-view" class="hidden bg-white rounded-3xl shadow-sm border border-gray-200 p-6 mt-6">
-         <h3 class="font-bold text-lg mb-4 text-[#003366]">Raw Match Data</h3>
-         <table class="w-full text-sm text-left">
-             <thead class="bg-[#003366] text-white">
-                 <tr><th class="p-3">Round</th><th class="p-3">Team 1</th><th class="p-3">Team 2</th><th class="p-3">Winner</th></tr>
-             </thead>
-             <tbody id="bracket-table-body" class="divide-y divide-gray-100"></tbody>
-         </table>
+    <div class="bracket-scroll" id="bracket-view">
+        <div class="bracket-tree" id="bracket-root">
+            </div>
     </div>
 
+    <div id="data-view">
+        <h2 id="table-title">Match Schedule</h2>
+        <table id="match-table">
+            <thead>
+                <tr>
+                    <th>Match ID</th>
+                    <th>Round</th>
+                    <th>Team A</th>
+                    <th>Team B</th>
+                    <th>Winner</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="table-body">
+                </tbody>
+        </table>
+    </div>
+
+<script>
+    // =========================================
+    // 1. SETUP & CONFIGURATION
+    // =========================================
+    
+    // Ensure config is loaded
+    if (typeof CONFIG === 'undefined') {
+        alert("Config missing. Please check config.js");
+    }
+
+    const supabase = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
+    let allMatches = []; // Stores fetched data
+    let currentSportId = null;
+    let currentCategory = null;
+
+    // Standard Round Names for different depths
+    const ROUND_NAMES = {
+        1: "Finals",
+        2: "Semi-Finals",
+        3: "Quarter-Finals",
+        4: "Round of 16",
+        5: "Round of 32",
+        6: "Round of 64"
+    };
+
+    // =========================================
+    // 2. INITIALIZATION
+    // =========================================
+    
+    async function init() {
+        try {
+            await fetchFilters();
+        } catch (error) {
+            console.error("Init Error:", error);
+            alert("Failed to load initial data.");
+        } finally {
+            document.getElementById('loading').style.display = 'none';
+        }
+    }
+
+    // Fetch distinct Sports and Categories to populate dropdowns
+    async function fetchFilters() {
+        // 1. Get Sports
+        const { data: sportsData, error: sportsError } = await supabase
+            .from('sports')
+            .select('id, name');
+            
+        if (sportsError) console.error("Sports Error:", sportsError);
+
+        const sportSelect = document.getElementById('sportFilter');
+        if (sportsData) {
+            sportsData.forEach(s => {
+                let opt = document.createElement('option');
+                opt.value = s.id;
+                opt.innerText = s.name;
+                sportSelect.appendChild(opt);
+            });
+            // Auto-select first sport if available
+            if(sportsData.length > 0) sportSelect.value = sportsData[0].id;
+        }
+
+        // 2. Get distinct Match Types (Categories) from matches table
+        // Since Supabase doesn't have "distinct" easily on client, we fetch simplified list
+        const { data: matchData, error: matchError } = await supabase
+            .from('matches')
+            .select('match_type')
+            .not('match_type', 'is', null);
+
+        if (matchData) {
+            const categories = [...new Set(matchData.map(item => item.match_type))];
+            const catSelect = document.getElementById('categoryFilter');
+            
+            categories.sort().forEach(c => {
+                let opt = document.createElement('option');
+                opt.value = c;
+                opt.innerText = c;
+                catSelect.appendChild(opt);
+            });
+            // Auto-select first category
+            if(categories.length > 0) catSelect.value = categories[0];
+        }
+
+        // Trigger load
+        loadBracketData();
+    }
+
+    // =========================================
+    // 3. DATA FETCHING & PROCESSING
+    // =========================================
+
+    async function loadBracketData() {
+        const sportId = document.getElementById('sportFilter').value;
+        const category = document.getElementById('categoryFilter').value;
+        
+        if (!sportId && !category) return; // Wait for selection
+
+        document.getElementById('loading').style.display = 'flex';
+
+        let query = supabase
+            .from('matches')
+            .select(`
+                id, round_number, match_type, status, winner_id,
+                team1_name, team2_name, team1_id, team2_id,
+                score1, score2
+            `)
+            .order('round_number', { ascending: true })
+            .order('id', { ascending: true });
+
+        if (sportId) query = query.eq('sport_id', sportId);
+        if (category) query = query.eq('match_type', category);
+
+        const { data, error } = await query;
+
+        if (error) {
+            console.error("Match Fetch Error:", error);
+            alert("Error fetching matches");
+            document.getElementById('loading').style.display = 'none';
+            return;
+        }
+
+        allMatches = data;
+        renderBracket(data);
+        renderTable(data);
+        document.getElementById('loading').style.display = 'none';
+    }
+
+    // =========================================
+    // 4. BRACKET RENDERING ENGINE
+    // =========================================
+
+    function renderBracket(matches) {
+        const root = document.getElementById('bracket-root');
+        root.innerHTML = '';
+
+        if (matches.length === 0) {
+            root.innerHTML = '<div style="padding:20px; color:#666;">No matches found for this selection.</div>';
+            return;
+        }
+
+        // 1. Group matches by Round
+        const rounds = {};
+        let maxRound = 0;
+        
+        matches.forEach(m => {
+            if (!rounds[m.round_number]) rounds[m.round_number] = [];
+            rounds[m.round_number].push(m);
+            if (m.round_number > maxRound) maxRound = m.round_number;
+        });
+
+        // 2. Iterate through rounds (1 to Max)
+        // Note: Assuming Round 1 is the first round played (Round of 32/16 etc)
+        // and Max Round is the Final.
+        
+        // Calculate total rounds to label them correctly (Final, Semi, etc)
+        // If maxRound is 4, then R4=Finals, R3=Semis, R2=Quarters, R1=R16
+        
+        for (let r = 1; r <= maxRound; r++) {
+            if (!rounds[r]) continue;
+
+            let roundDiv = document.createElement('div');
+            roundDiv.className = 'round';
+            
+            // Dynamic Title Logic
+            let roundFromFinal = maxRound - r + 1; // 1 = Final, 2 = Semi...
+            let titleText = ROUND_NAMES[roundFromFinal] || `Round ${r}`;
+            
+            let title = document.createElement('div');
+            title.className = 'round-title';
+            title.innerText = titleText;
+            roundDiv.appendChild(title);
+
+            // Render Matches in this Round
+            rounds[r].forEach((m, idx) => {
+                let matchWrap = document.createElement('div');
+                matchWrap.className = 'match-wrapper';
+                matchWrap.id = `match-${m.id}`;
+                
+                // Logic for connector forks (Pairs)
+                // We assume matches are sorted such that 0&1 feed into next round's 0
+                if (idx % 2 === 0) matchWrap.setAttribute('data-pair-start', 'true');
+
+                // Determine Winner Styling
+                let t1Class = (m.winner_id && m.winner_id === m.team1_id) ? "team winner" : "team";
+                let t2Class = (m.winner_id && m.winner_id === m.team2_id) ? "team winner" : "team";
+
+                // Handle Empty/Bye Slots
+                let t1Name = m.team1_name || "TBD";
+                let t2Name = m.team2_name || "TBD";
+                
+                // Truncate long names
+                const trunc = (str) => str.length > 15 ? str.substring(0, 13) + '..' : str;
+
+                matchWrap.innerHTML = `
+                    <div class="match-card">
+                        <div class="${t1Class}">
+                            <span>${trunc(t1Name)}</span>
+                            <span class="score">${m.score1 || 0}</span>
+                        </div>
+                        <div class="${t2Class}">
+                            <span>${trunc(t2Name)}</span>
+                            <span class="score">${m.score2 || 0}</span>
+                        </div>
+                    </div>
+                `;
+                roundDiv.appendChild(matchWrap);
+            });
+
+            root.appendChild(roundDiv);
+        }
+
+        // 3. Draw The CHAMPION Box (Visual Only) if Finals exists
+        let finalRoundMatches = rounds[maxRound];
+        if (finalRoundMatches && finalRoundMatches.length === 1) {
+            let finalMatch = finalRoundMatches[0];
+            let championName = "?";
+            
+            if (finalMatch.status === 'Completed' && finalMatch.winner_id) {
+                championName = finalMatch.winner_id === finalMatch.team1_id 
+                    ? finalMatch.team1_name 
+                    : finalMatch.team2_name;
+            }
+
+            let champDiv = document.createElement('div');
+            champDiv.className = 'round';
+            champDiv.style.justifyContent = 'center';
+            champDiv.innerHTML = `
+                <div class="round-title" style="color:var(--secondary);">CHAMPION</div>
+                <div class="match-wrapper">
+                    <div class="match-card" style="border: 2px solid var(--secondary); box-shadow: 0 0 15px rgba(184,134,11,0.2);">
+                        <div class="team winner" style="justify-content:center; height:50px; font-size:1.1rem; background:white; color:var(--secondary);">
+                            🏆 ${championName}
+                        </div>
+                    </div>
+                </div>
+            `;
+            root.appendChild(champDiv);
+        }
+
+        // 4. Draw Connectors
+        setTimeout(drawConnectors, 100);
+    }
+
+    // =========================================
+    // 5. CONNECTOR LOGIC (Visual Lines)
+    // =========================================
+
+    function drawConnectors() {
+        // Clear old lines
+        document.querySelectorAll('.connector-vertical').forEach(e => e.remove());
+
+        const pairs = document.querySelectorAll('[data-pair-start="true"]');
+        const container = document.getElementById('bracket-root');
+        const containerRect = container.getBoundingClientRect();
+
+        pairs.forEach(startEl => {
+            let nextEl = startEl.nextElementSibling;
+            
+            // Only draw if there is a pair (partner match exists below it)
+            if (!nextEl || !nextEl.classList.contains('match-wrapper')) return;
+
+            // Get positions relative to the scroll container
+            let rect1 = startEl.getBoundingClientRect();
+            let rect2 = nextEl.getBoundingClientRect();
+
+            let y1 = (rect1.top + rect1.height / 2) - containerRect.top;
+            let y2 = (rect2.top + rect2.height / 2) - containerRect.top;
+            let height = y2 - y1;
+
+            // Create Vertical Line
+            let line = document.createElement('div');
+            line.className = 'connector-vertical';
+            line.style.height = height + 'px';
+            line.style.top = '50%';
+            
+            // Logic to hide line for the very last round (Champion connector)
+            // If the parent round is the last one, don't add
+            if(startEl.parentElement.nextElementSibling) {
+                 startEl.appendChild(line);
+            }
+        });
+    }
+
+    // Resize listener to redraw lines
+    window.addEventListener('resize', drawConnectors);
+
+    // =========================================
+    // 6. UTILITIES (Table, Toggle, Export)
+    // =========================================
+
+    function renderTable(matches) {
+        const tbody = document.getElementById('table-body');
+        tbody.innerHTML = '';
+        
+        matches.forEach(m => {
+            let winnerName = "-";
+            if (m.winner_id) {
+                winnerName = m.winner_id === m.team1_id ? m.team1_name : m.team2_name;
+            }
+
+            let row = `
+                <tr>
+                    <td>${m.id.substring(0,8)}...</td>
+                    <td>Round ${m.round_number}</td>
+                    <td>${m.team1_name || 'TBD'}</td>
+                    <td>${m.team2_name || 'TBD'}</td>
+                    <td style="font-weight:bold; color:var(--primary)">${winnerName || '-'}</td>
+                    <td><span style="padding:2px 6px; border-radius:4px; font-size:0.8rem; background:${m.status==='Completed'?'#d1fae5':'#f3f4f6'}; color:${m.status==='Completed'?'#065f46':'#374151'}">${m.status}</span></td>
+                </tr>
+            `;
+            tbody.innerHTML += row;
+        });
+    }
+
+    function toggleView() {
+        const v = document.getElementById('bracket-view');
+        const d = document.getElementById('data-view');
+        const btn = document.querySelector('.btn-toggle');
+        
+        if (v.style.display === 'none') {
+            v.style.display = 'block';
+            d.style.display = 'none';
+            btn.innerText = "📊 Toggle List";
+            setTimeout(drawConnectors, 50); // Redraw lines when visible
+        } else {
+            v.style.display = 'none';
+            d.style.display = 'block';
+            btn.innerText = "🌳 Toggle Bracket";
+        }
+    }
+
+    function printPDF() {
+        // Ensure bracket is visible for printing
+        document.getElementById('bracket-view').style.display = 'block';
+        document.getElementById('data-view').style.display = 'none';
+        window.print();
+    }
+
+    function exportExcel() {
+        const cat = document.getElementById('categoryFilter').value || "Tournament";
+        let tableHTML = `
+            <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+            <head></head>
+            <body>
+                <h2>B. K. Birla College - ${cat} Schedule</h2>
+                <table border="1">
+                    <thead>
+                        <tr style="background-color: #003366; color: white;">
+                            <th>Round</th><th>Team A</th><th>Team B</th><th>Winner</th><th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+
+        allMatches.forEach(m => {
+            let winner = (m.winner_id === m.team1_id ? m.team1_name : (m.winner_id === m.team2_id ? m.team2_name : "-"));
+            tableHTML += `
+                <tr>
+                    <td>Round ${m.round_number}</td>
+                    <td>${m.team1_name || 'TBD'}</td>
+                    <td>${m.team2_name || 'TBD'}</td>
+                    <td>${winner}</td>
+                    <td>${m.status}</td>
+                </tr>
+            `;
+        });
+
+        tableHTML += `</tbody></table></body></html>`;
+
+        const blob = new Blob([tableHTML], { type: 'application/vnd.ms-excel' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Schedule_${cat.replace(/\s/g,'_')}.xls`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+
+    // Start App
+    window.onload = init;
+
+</script>
 </body>
 </html>
