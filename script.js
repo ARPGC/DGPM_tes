@@ -9,9 +9,9 @@ if (typeof CONFIG === 'undefined') {
     alert("Error: config.js not found or not loaded. Please ensure config.js is in the same folder.");
 }
 
-// Initialize Supabase Client
+// FIX: Accessing keys directly from CONFIG (matching your screenshot)
 // We use 'sbClient' to avoid conflict with the global 'supabase' variable from the CDN
-const sbClient = window.supabase.createClient(CONFIG.SUPABASE.supabaseUrl, CONFIG.SUPABASE.supabaseKey);
+const sbClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
 
 const state = {
     matches: [],
@@ -72,7 +72,13 @@ const logic = {
 
         if (error) {
             console.error(error);
-            alert("Error fetching data. Check console.");
+            // Don't alert immediately on 404 (empty table), just show setup
+            if(matches === null) {
+                 ui.openSetupModal();
+                 ui.toggleLoading(false);
+                 return;
+            }
+            alert("Error fetching data: " + error.message);
             ui.toggleLoading(false);
             return;
         }
