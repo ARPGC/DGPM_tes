@@ -51,7 +51,6 @@ async function fetchAndRenderResults() {
     }
     
     populateSportFilter();
-    updateStats();
     renderCards(allResults);
 }
 
@@ -181,14 +180,4 @@ function populateSportFilter() {
         opt.innerText = s;
         select.appendChild(opt);
     });
-}
-
-function updateStats() {
-    let counts = { gold: 0, silver: 0, bronze: 0 };
-    allResults.forEach(r => { if(counts[r.medal] !== undefined) counts[r.medal]++; });
-    
-    // Simple update, no animations needed for professional view
-    document.getElementById('count-gold').innerText = counts.gold;
-    document.getElementById('count-silver').innerText = counts.silver;
-    document.getElementById('count-bronze').innerText = counts.bronze;
 }
