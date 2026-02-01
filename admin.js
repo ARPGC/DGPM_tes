@@ -401,8 +401,8 @@ window.submitTeamResult = async function() {
     const teamId = document.getElementById('declare-team').value;
     const medal = document.getElementById('declare-medal').value;
     const rank = document.getElementById('declare-rank').value;
-    const gender = document.getElementById('declare-gender').value; // NEW
-    const category = document.getElementById('declare-category').value; // NEW
+    const gender = document.getElementById('declare-gender').value; 
+    const category = document.getElementById('declare-category').value; 
     
     if(!teamId || !rank || !gender || !category) return showToast("Please fill all fields (Gender, Category, Team)", "error");
     
@@ -414,8 +414,8 @@ window.submitTeamResult = async function() {
         event_name: sportName,
         medal: medal,
         rank: parseInt(rank),
-        category: category,  // UPDATED
-        gender: gender,      // UPDATED
+        category: category,  
+        gender: gender,      
         student_name: '-', 
         student_id: '-',
         mobile: '-',
@@ -432,7 +432,7 @@ window.submitTeamResult = async function() {
 }
 
 // ==========================================
-// ADVANCED RESULTS EXPORTS
+// ADVANCED RESULTS EXPORTS (UPDATED WITH ID & MOBILE)
 // ==========================================
 
 // 1. SUMMARY EXCEL (Just what is on screen)
@@ -467,8 +467,8 @@ window.downloadResultsFullExcel = async function() {
             "Medal": r.medal,
             "Student Name": r.student_name,
             "Class": r.class || '-',
-            "ID": r.student_id || '-',
-            "Mobile": r.mobile || '-'
+            "ID": r.student_id || '-', // ADDED
+            "Mobile": r.mobile || '-'    // ADDED
         });
     });
 
@@ -493,8 +493,8 @@ window.downloadResultsFullExcel = async function() {
                         "Medal": res.medal,
                         "Student Name": `${m.users.first_name} ${m.users.last_name}`,
                         "Class": m.users.class_name || '-',
-                        "ID": m.users.student_id || '-',
-                        "Mobile": m.users.mobile || '-'
+                        "ID": m.users.student_id || '-', // ADDED
+                        "Mobile": m.users.mobile || '-'    // ADDED
                     });
                 });
             } else {
@@ -557,7 +557,7 @@ window.downloadResultsFullPDF = async function() {
             category: r.category,
             name: r.student_name,
             class: r.class,
-            id: r.student_id
+            id: r.student_id // ADDED
         });
     });
 
@@ -583,7 +583,7 @@ window.downloadResultsFullPDF = async function() {
                     category: res.category,
                     name: `${m.users.first_name} ${m.users.last_name}`,
                     class: m.users.class_name,
-                    id: m.users.student_id
+                    id: m.users.student_id // ADDED
                  });
              });
         }
@@ -611,12 +611,13 @@ window.downloadResultsFullPDF = async function() {
             e.category || '-',
             e.gender || '-',
             e.name,
-            e.class || '-'
+            e.class || '-',
+            e.id || '-' // ADDED TO ROW
         ]);
 
         doc.autoTable({
             startY: yPos,
-            head: [['Rank', 'Team/Type', 'Cat', 'Gen', 'Student Name', 'Class']],
+            head: [['Rank', 'Team/Type', 'Cat', 'Gen', 'Student Name', 'Class', 'ID']],
             body: rows,
             theme: 'grid',
             headStyles: { fillColor: [66, 66, 66], fontSize: 8 },
