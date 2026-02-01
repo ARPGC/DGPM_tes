@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Official Results | URJA 2026</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <script src="config.js"></script>
+    <script src="config2.js"></script>
+    <script src="results.js" defer></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            primary: '#4F46E5', // Indigo 600
+                            dark: '#111827',    // Gray 900
+                            gold: '#F59E0B',
+                            silver: '#9CA3AF',
+                            bronze: '#B45309'
+                        }
+                    },
+                    animation: {
+                        'fade-in-up': 'fadeInUp 0.5s ease-out forwards'
+                    },
+                    keyframes: {
+                        fadeInUp: {
+                            '0%': { opacity: '0', transform: 'translateY(20px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' }
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #F3F4F6; }
+        .glass-panel { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); }
+        .medal-badge { clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%); }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <nav class="bg-brand-dark text-white sticky top-0 z-50 shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="trophy" class="w-6 h-6 text-brand-gold"></i>
+                    <span class="font-black text-xl tracking-tighter italic">URJA <span class="text-brand-primary">2026</span></span>
+                </div>
+                <a href="login.html" class="text-sm font-bold text-gray-400 hover:text-white transition-colors">Admin Login</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="bg-brand-dark pb-24 pt-8 px-4">
+        <div class="max-w-7xl mx-auto text-center">
+            <h1 class="text-4xl md:text-5xl font-black text-white mb-2">Hall of Fame</h1>
+            <p class="text-gray-400 text-sm uppercase tracking-widest font-bold mb-8">Celebrating Our Champions</p>
+            
+            <div class="grid grid-cols-3 md:grid-cols-4 gap-4 max-w-3xl mx-auto">
+                <div class="bg-white/10 rounded-2xl p-4 backdrop-blur-sm border border-white/5">
+                    <p class="text-brand-gold font-black text-3xl" id="count-gold">0</p>
+                    <p class="text-[10px] text-gray-300 uppercase font-bold tracking-wider">Golds</p>
+                </div>
+                <div class="bg-white/10 rounded-2xl p-4 backdrop-blur-sm border border-white/5">
+                    <p class="text-gray-300 font-black text-3xl" id="count-silver">0</p>
+                    <p class="text-[10px] text-gray-300 uppercase font-bold tracking-wider">Silvers</p>
+                </div>
+                <div class="bg-white/10 rounded-2xl p-4 backdrop-blur-sm border border-white/5">
+                    <p class="text-brand-bronze font-black text-3xl" id="count-bronze">0</p>
+                    <p class="text-[10px] text-gray-300 uppercase font-bold tracking-wider">Bronzes</p>
+                </div>
+                <div class="hidden md:block bg-brand-primary/20 rounded-2xl p-4 backdrop-blur-sm border border-brand-primary/20">
+                    <p class="text-white font-black text-3xl" id="count-total">0</p>
+                    <p class="text-[10px] text-indigo-200 uppercase font-bold tracking-wider">Total Events</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-16 pb-20 relative z-10">
+        
+        <div class="bg-white rounded-2xl shadow-xl p-4 mb-8">
+            <div class="flex flex-col md:flex-row gap-4 items-center justify-between">
+                
+                <div class="relative w-full md:w-1/3">
+                    <i data-lucide="search" class="absolute left-3 top-3 w-4 h-4 text-gray-400"></i>
+                    <input type="text" id="public-search" onkeyup="filterPublicResults()" placeholder="Search Winner or Team..." class="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-brand-primary/20 transition-all">
+                </div>
+
+                <div class="flex gap-2 overflow-x-auto w-full md:w-auto no-scrollbar pb-1 md:pb-0">
+                    <select id="filter-sport" onchange="filterPublicResults()" class="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-xs font-bold outline-none cursor-pointer hover:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 transition-all min-w-[120px]">
+                        <option value="">All Sports</option>
+                    </select>
+
+                    <select id="filter-category" onchange="filterPublicResults()" class="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-xs font-bold outline-none cursor-pointer hover:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 transition-all">
+                        <option value="">Category</option>
+                        <option value="Junior">Junior</option>
+                        <option value="Degree">Degree</option>
+                    </select>
+
+                    <select id="filter-gender" onchange="filterPublicResults()" class="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-xs font-bold outline-none cursor-pointer hover:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 transition-all">
+                        <option value="">Gender</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Mixed">Mixed</option>
+                    </select>
+
+                    <select id="filter-medal" onchange="filterPublicResults()" class="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-xs font-bold outline-none cursor-pointer hover:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 transition-all">
+                        <option value="">Medal</option>
+                        <option value="gold">Gold</option>
+                        <option value="silver">Silver</option>
+                        <option value="bronze">Bronze</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div id="results-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div class="col-span-full text-center py-20 text-gray-400">
+                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-primary mx-auto mb-4"></div>
+                <p>Loading Results...</p>
+            </div>
+        </div>
+
+    </main>
+
+    <footer class="bg-white border-t border-gray-200 py-8 text-center text-xs text-gray-400 font-bold uppercase tracking-widest">
+        &copy; 2026 URJA Sports Committee
+    </footer>
+
+</body>
+</html>
