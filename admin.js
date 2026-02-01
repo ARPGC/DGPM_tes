@@ -22,7 +22,7 @@ let allTeamsCache = [];
 let allMatchesCache = []; 
 let dataCache = []; 
 let allRegistrationsCache = []; 
-let allResultsCache = []; // NEW
+let allResultsCache = []; 
 let currentEditingTeamId = null;
 
 // Sorting
@@ -162,7 +162,7 @@ window.switchView = function(viewId) {
     if(viewId === 'matches') loadMatches(); 
     if(viewId === 'teams') loadTeamsList();
     if(viewId === 'registrations') loadRegistrationsList();
-    if(viewId === 'results') loadResults(); // NEW
+    if(viewId === 'results') loadResults(); 
 }
 
 // --- 7. EXPORT GENERIC ---
@@ -219,7 +219,7 @@ async function fetchAllRecords(table, select, orderCol, ascending = false) {
 }
 
 // ==========================================
-// NEW FEATURE: RESULTS & TEAM DECLARATION
+// RESULTS & TEAM DECLARATION (UPDATED)
 // ==========================================
 
 async function loadResults() {
@@ -238,8 +238,6 @@ async function loadResults() {
         .order('created_at', { ascending: false });
 
     if(error) { showToast("Error loading results", "error"); return; }
-    
-    // We also need sport names for individual results (stored as text 'event_name' usually, but good to have)
     
     allResultsCache = results || [];
 
@@ -266,13 +264,14 @@ function renderResults(results) {
     dataCache = results.map(r => {
         const isTeam = !!r.team_id;
         const name = isTeam ? (r.teams?.name || 'Unknown Team') : r.student_name;
-        const sport = r.event_name || (r.teams?.sports?.name) || 'Unknown'; // Fallback logic
+        const sport = r.event_name || (r.teams?.sports?.name) || 'Unknown'; 
         
         return {
             "Type": isTeam ? "TEAM" : "INDIVIDUAL",
             "Name": name,
             "Event": sport,
             "Category": r.category || '-',
+            "Gender": r.gender || '-',
             "Rank": r.rank,
             "Medal": r.medal,
             "Declared At": new Date(r.created_at).toLocaleDateString()
@@ -302,7 +301,12 @@ function renderResults(results) {
                 </div>
             </td>
             <td class="p-4 font-bold text-gray-700">${sport}</td>
-            <td class="p-4 text-sm text-gray-500">${r.category || '-'}</td>
+            <td class="p-4 text-sm text-gray-500">
+                <div class="flex flex-col">
+                    <span class="font-bold">${r.category || '-'}</span>
+                    <span class="text-xs text-gray-400">${r.gender || '-'}</span>
+                </div>
+            </td>
             <td class="p-4 text-center font-mono font-bold text-gray-900">#${r.rank}</td>
             <td class="p-4 text-center">
                 <span class="px-2 py-1 rounded-lg text-xs font-bold uppercase ${medalColor}">${r.medal}</span>
@@ -322,17 +326,23 @@ window.filterResultsList = function() {
     const search = document.getElementById('results-search').value.toLowerCase();
     const sportFilter = document.getElementById('filter-results-sport').value;
     const medalFilter = document.getElementById('filter-results-medal').value;
+    const catFilter = document.getElementById('filter-results-category').value;
+    const genderFilter = document.getElementById('filter-results-gender').value;
 
     const filtered = allResultsCache.filter(r => {
         const isTeam = !!r.team_id;
         const name = (isTeam ? r.teams?.name : r.student_name)?.toLowerCase() || '';
-        const sport = (r.event_name || r.teams_sport?.[0]?.sports?.name || '').toLowerCase(); // Fix sport checking
+        const sport = (r.event_name || r.teams_sport?.[0]?.sports?.name || '').toLowerCase();
         
         const matchesSearch = name.includes(search);
-        const matchesSport = sportFilter === '' || sport.includes(sportFilter.toLowerCase()); // Loose match for reliability
+        const matchesSport = sportFilter === '' || sport.includes(sportFilter.toLowerCase());
         const matchesMedal = medalFilter === '' || r.medal === medalFilter;
+        
+        // New Filters
+        const matchesCat = catFilter === '' || r.category === catFilter;
+        const matchesGender = genderFilter === '' || r.gender === genderFilter;
 
-        return matchesSearch && matchesSport && matchesMedal;
+        return matchesSearch && matchesSport && matchesMedal && matchesCat && matchesGender;
     });
 
     renderResults(filtered);
@@ -348,7 +358,7 @@ window.deleteResult = async function(id) {
     }
 }
 
-// --- DECLARE RESULT MODAL LOGIC ---
+// --- DECLARE RESULT MODAL LOGIC (UPDATED WITH GENDER/CAT) ---
 
 window.openDeclareResultModal = async function() {
     const modal = document.getElementById('declare-result-modal');
@@ -360,10 +370,7 @@ window.openDeclareResultModal = async function() {
     
     modal.classList.remove('hidden');
 
-    // Load Sports with Teams
-    const { data: sports } = await adminClient.from('sports').select('id, name').eq('team_size', 'gt.1'); // Only fetch team sports or all sports? Assuming team sports mostly.
-    
-    // Better: Fetch all sports to be safe
+    // Load All Sports
     const { data: allSports } = await adminClient.from('sports').select('id, name').order('name');
     
     const sportSelect = document.getElementById('declare-sport');
@@ -394,8 +401,10 @@ window.submitTeamResult = async function() {
     const teamId = document.getElementById('declare-team').value;
     const medal = document.getElementById('declare-medal').value;
     const rank = document.getElementById('declare-rank').value;
+    const gender = document.getElementById('declare-gender').value; // NEW
+    const category = document.getElementById('declare-category').value; // NEW
     
-    if(!teamId || !rank) return showToast("Please select Team and Rank", "error");
+    if(!teamId || !rank || !gender || !category) return showToast("Please fill all fields (Gender, Category, Team)", "error");
     
     const sportName = sportSelect.options[sportSelect.selectedIndex].text;
 
@@ -405,8 +414,9 @@ window.submitTeamResult = async function() {
         event_name: sportName,
         medal: medal,
         rank: parseInt(rank),
-        category: 'Team Event', // Generic placeholder
-        student_name: '-', // Placeholders for constraint if needed, otherwise null
+        category: category,  // UPDATED
+        gender: gender,      // UPDATED
+        student_name: '-', 
         student_id: '-',
         mobile: '-',
         class: '-'
@@ -451,6 +461,8 @@ window.downloadResultsFullExcel = async function() {
             "Event": r.event_name,
             "Type": "Individual",
             "Team Name": "-",
+            "Category": r.category || '-',
+            "Gender": r.gender || '-',
             "Rank": r.rank,
             "Medal": r.medal,
             "Student Name": r.student_name,
@@ -462,8 +474,6 @@ window.downloadResultsFullExcel = async function() {
 
     // 2. Process Team Results (Fetch Members)
     if (teamResults.length > 0) {
-        // Fetch all members for these winning teams in one go if possible, or loop
-        // Loop is safer for logic
         for (const res of teamResults) {
             const { data: members } = await adminClient
                 .from('team_members')
@@ -477,6 +487,8 @@ window.downloadResultsFullExcel = async function() {
                         "Event": res.event_name,
                         "Type": "Team",
                         "Team Name": res.teams?.name,
+                        "Category": res.category || '-',
+                        "Gender": res.gender || '-',
                         "Rank": res.rank,
                         "Medal": res.medal,
                         "Student Name": `${m.users.first_name} ${m.users.last_name}`,
@@ -491,6 +503,8 @@ window.downloadResultsFullExcel = async function() {
                     "Event": res.event_name,
                     "Type": "Team",
                     "Team Name": res.teams?.name,
+                    "Category": res.category || '-',
+                    "Gender": res.gender || '-',
                     "Rank": res.rank,
                     "Medal": res.medal,
                     "Student Name": "NO MEMBERS FOUND",
@@ -539,6 +553,8 @@ window.downloadResultsFullPDF = async function() {
             rank: r.rank,
             medal: r.medal,
             team: '-',
+            gender: r.gender,
+            category: r.category,
             name: r.student_name,
             class: r.class,
             id: r.student_id
@@ -563,6 +579,8 @@ window.downloadResultsFullPDF = async function() {
                     rank: res.rank,
                     medal: res.medal,
                     team: res.teams?.name,
+                    gender: res.gender,
+                    category: res.category,
                     name: `${m.users.first_name} ${m.users.last_name}`,
                     class: m.users.class_name,
                     id: m.users.student_id
@@ -589,15 +607,16 @@ window.downloadResultsFullPDF = async function() {
         // Table
         const rows = entries.map(e => [
             `#${e.rank} - ${e.medal.toUpperCase()}`,
-            e.team !== '-' ? `${e.team} (Team)` : 'Individual',
+            e.team !== '-' ? `${e.team}` : 'Individual',
+            e.category || '-',
+            e.gender || '-',
             e.name,
-            e.class || '-',
-            e.id || '-'
+            e.class || '-'
         ]);
 
         doc.autoTable({
             startY: yPos,
-            head: [['Rank/Medal', 'Team/Type', 'Student Name', 'Class', 'ID']],
+            head: [['Rank', 'Team/Type', 'Cat', 'Gen', 'Student Name', 'Class']],
             body: rows,
             theme: 'grid',
             headStyles: { fillColor: [66, 66, 66], fontSize: 8 },
