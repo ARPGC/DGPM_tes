@@ -331,10 +331,10 @@
             <div class="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden mb-6">
                 <div class="p-4 border-b border-gray-100 flex flex-wrap gap-4 items-center bg-gray-50/50 justify-between">
                     <div class="flex gap-4 items-center flex-1">
-                        <div class="flex-1 max-w-[300px]">
+                        <div class="flex-1 max-w-[200px]">
                             <div class="relative">
                                 <i data-lucide="search" class="absolute left-3 top-3 w-4 h-4 text-gray-400"></i>
-                                <input type="text" id="results-search" onkeyup="filterResultsList()" placeholder="Search Winner Name..." class="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-brand-primary/20 transition-all">
+                                <input type="text" id="results-search" onkeyup="filterResultsList()" placeholder="Search Name..." class="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-brand-primary/20 transition-all">
                             </div>
                         </div>
 
@@ -347,6 +347,19 @@
                             <option value="gold">Gold</option>
                             <option value="silver">Silver</option>
                             <option value="bronze">Bronze</option>
+                        </select>
+
+                        <select id="filter-results-category" onchange="filterResultsList()" class="bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none cursor-pointer hover:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 transition-all">
+                            <option value="">All Categories</option>
+                            <option value="Junior">Junior</option>
+                            <option value="Degree">Degree</option>
+                        </select>
+
+                        <select id="filter-results-gender" onchange="filterResultsList()" class="bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none cursor-pointer hover:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 transition-all">
+                            <option value="">All Genders</option>
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                            <option value="Mixed">Mixed</option>
                         </select>
                     </div>
 
@@ -361,7 +374,7 @@
                             <tr class="bg-gray-50 text-gray-500 text-[10px] uppercase tracking-wider font-bold">
                                 <th class="p-4 border-b">Winner Name (Team / Student)</th>
                                 <th class="p-4 border-b">Event / Sport</th>
-                                <th class="p-4 border-b">Category</th>
+                                <th class="p-4 border-b">Category / Gender</th>
                                 <th class="p-4 border-b text-center">Rank</th>
                                 <th class="p-4 border-b text-center">Medal</th>
                                 <th class="p-4 border-b text-right">Action</th>
@@ -437,6 +450,24 @@
                     <select id="declare-team" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-brand-primary/20">
                         <option value="">-- Choose Team --</option>
                     </select>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Category</label>
+                        <select id="declare-category" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-brand-primary/20">
+                            <option value="Junior">Junior</option>
+                            <option value="Degree">Degree</option>
+                        </select>
+                    </div>
+                     <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Gender</label>
+                        <select id="declare-gender" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-brand-primary/20">
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                            <option value="Mixed">Mixed</option>
+                        </select>
+                    </div>
                 </div>
 
                 <div class="grid grid-cols-2 gap-4">
